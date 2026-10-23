@@ -1,0 +1,163 @@
+name: build
+on: [push, workflow_dispatch]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Generate project
+        run: |
+          mkdir -p app/src/main/java/com/om/shasha app/src/main/assets app/src/main/res/drawable
+          cat > settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.5.2' apply false }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+            namespace 'com.om.shasha'
+            compileSdk 34
+            defaultConfig { applicationId 'com.om.shasha'; minSdk 24; targetSdk 34; versionCode 1; versionName '1.0' }
+          }
+          EOF
+          cat > app/src/main/res/drawable/banner.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><solid android:color="#2B3A67"/></shape>
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+            <uses-feature android:name="android.software.leanback" android:required="false"/>
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <queries>
+              <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent>
+              <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
+            </queries>
+            <application android:label="شاشة" android:icon="@drawable/banner" android:banner="@drawable/banner">
+              <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
+                android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+                android:configChanges="orientation|screenSize|keyboardHidden">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+                  <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+                </intent-filter>
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.HOME"/>
+                  <category android:name="android.intent.category.DEFAULT"/>
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/om/shasha/MainActivity.java <<'EOF'
+          package com.om.shasha;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          public class MainActivity extends Activity {
+            class Bridge {
+              @JavascriptInterface
+              public void launch(String p) {
+                Intent i = null;
+                if (p.equals("settings")) i = new Intent(Settings.ACTION_SETTINGS);
+                else {
+                  i = getPackageManager().getLeanbackLaunchIntentForPackage(p);
+                  if (i == null) i = getPackageManager().getLaunchIntentForPackage(p);
+                }
+                if (i != null) { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(i); }
+              }
+            }
+            @Override protected void onCreate(Bundle b) {
+              super.onCreate(b);
+              WebView w = new WebView(this);
+              WebSettings s = w.getSettings();
+              s.setJavaScriptEnabled(true);
+              s.setDomStorageEnabled(true);
+              s.setAllowUniversalAccessFromFileURLs(true);
+              w.setBackgroundColor(0xFF2B3A67);
+              w.addJavascriptInterface(new Bridge(), "Android");
+              setContentView(w);
+              w.loadUrl("file:///android_asset/index.html");
+            }
+            @Override public void onBackPressed() { }
+          }
+          EOF
+          cat > app/src/main/assets/index.html <<'EOF'
+          <!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <style>
+          *{box-sizing:border-box;margin:0}
+          body{height:100vh;overflow:hidden;font-family:sans-serif;color:#fff;background:linear-gradient(160deg,#2b3a67,#8d6e8f 60%,#d9a066)}
+          .wrap{display:grid;grid-template-columns:1fr 1.2fr 1fr;grid-template-rows:1fr auto;gap:2vw;padding:3vw;height:100vh}
+          .card{background:rgba(255,255,255,.15);border-radius:28px;padding:2vw;border:1px solid rgba(255,255,255,.3);display:flex;flex-direction:column;justify-content:center;text-align:center;gap:1vw}
+          #time{font-size:7vw;font-weight:700}
+          #hadith{font-size:2.6vw;line-height:1.7}
+          #temp{font-size:6vw;font-weight:700}
+          .small{font-size:1.8vw;opacity:.9}
+          .pr{display:flex;justify-content:space-between;font-size:1.7vw;padding:.3vw 1vw;border-radius:12px}
+          .pr.on{background:rgba(255,255,255,.3)}
+          .apps{grid-column:1/4;display:flex;gap:2vw;justify-content:center}
+          button{font-size:2vw;padding:1.2vw 3vw;border-radius:20px;border:2px solid transparent;background:rgba(255,255,255,.2);color:#fff}
+          button:focus{border-color:#fff;background:rgba(255,255,255,.45);outline:none}
+          body.idle .apps{display:none}
+          body.idle #time{font-size:11vw}
+          </style></head><body><div class="wrap">
+          <div class="card"><div id="time">--:--</div><div class="small" id="hijri"></div><div class="small" id="greg"></div>
+          <div class="small" id="next"></div><div class="small" id="ram"></div></div>
+          <div class="card"><div class="small">قال رسول الله ﷺ</div><div id="hadith"></div></div>
+          <div class="card"><div class="small">الخفجي</div><div id="temp">--°</div><div class="small" id="hl"></div><div id="list"></div></div>
+          <div class="apps">
+          <button onclick="L('com.google.android.youtube.tv')">YouTube</button>
+          <button onclick="L('com.netflix.ninja')">Netflix</button>
+          <button onclick="L('settings')">الإعدادات</button>
+          </div></div><script>
+          var $=function(i){return document.getElementById(i)};
+          function L(p){if(window.Android)Android.launch(p)}
+          var H=["إنما الأعمال بالنيات","إن الله رفيق يحب الرفق في الأمر كله","من سلك طريقا يلتمس فيه علما سهل الله له به طريقا إلى الجنة","الدين النصيحة","لا يؤمن أحدكم حتى يحب لأخيه ما يحب لنفسه","الكلمة الطيبة صدقة","تبسمك في وجه أخيك صدقة"];
+          $('hadith').textContent=H[Math.floor(Date.now()/864e5)%H.length];
+          var N=[["Fajr","الفجر"],["Dhuhr","الظهر"],["Asr","العصر"],["Maghrib","المغرب"],["Isha","العشاء"]],T=null,nextName="";
+          function at(s,add){var d=new Date();var p=s.split(":");d.setHours(+p[0],+p[1],0,0);d.setDate(d.getDate()+add);return d}
+          function tick(){var d=new Date();
+          $('time').textContent=d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+          $('greg').textContent=d.toLocaleDateString('ar-SA-u-ca-gregory',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+          $('hijri').textContent=d.toLocaleDateString('ar-SA-u-ca-islamic-umalqura',{day:'numeric',month:'long',year:'numeric'});
+          var r=Math.ceil((new Date(2027,1,8)-d)/864e5);$('ram').textContent=r>0?"رمضان بعد "+r+" يوم":"";
+          if(!T)return;var nx=null;
+          for(var i=0;i<5;i++){var t=at(T[N[i][0]],0);if(t>d){nx=[N[i][1],t];break}}
+          if(!nx)nx=[N[0][1],at(T.Fajr,1)];
+          var s=Math.floor((nx[1]-d)/1000),f=function(x){return(x<10?"0":"")+x};
+          $('next').textContent="الصلاة القادمة: "+nx[0]+" بعد "+f(Math.floor(s/3600))+":"+f(Math.floor(s%3600/60))+":"+f(s%60);
+          if(nextName!=nx[0]){nextName=nx[0];draw()}}
+          function draw(){var h="";for(var i=0;i<5;i++){h+='<div class="pr'+(N[i][1]==nextName?' on':'')+'"><span>'+N[i][1]+'</span><span>'+T[N[i][0]].slice(0,5)+'</span></div>'}$('list').innerHTML=h}
+          function prayer(){fetch('https://api.aladhan.com/v1/timingsByCity?city=Khafji&country=SA&method=4').then(function(r){return r.json()}).then(function(j){T=j.data.timings;nextName="";tick()}).catch(function(){})}
+          function weather(){fetch('https://api.open-meteo.com/v1/forecast?latitude=28.43&longitude=48.49&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min&timezone=auto').then(function(r){return r.json()}).then(function(j){$('temp').textContent=Math.round(j.current.temperature_2m)+"°";$('hl').textContent="↑"+Math.round(j.daily.temperature_2m_max[0])+"° ↓"+Math.round(j.daily.temperature_2m_min[0])+"°"}).catch(function(){})}
+          var idle;function wake(){document.body.classList.remove('idle');clearTimeout(idle);idle=setTimeout(function(){document.body.classList.add('idle')},60000)}
+          document.addEventListener('keydown',wake);document.addEventListener('mousemove',wake);wake();
+          prayer();weather();tick();setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);
+          </script></body></html>
+          EOF
+      - run: gradle assembleDebug --no-daemon
+      - run: cp app/build/outputs/apk/debug/app-debug.apk shasha.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          files: shasha.apk
+          make_latest: true
