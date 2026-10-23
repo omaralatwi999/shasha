@@ -424,6 +424,7 @@ jobs:
           .clock{text-align:center}
           #time{font-size:12.5vw;font-weight:700;line-height:1;letter-spacing:-.2vw;text-shadow:0 .4vw 3vw rgba(0,0,0,.5)}
           #ampm{font-size:3vw;margin-top:-.4vw;text-shadow:0 2px 12px rgba(0,0,0,.5)}
+          #tsrc{font-size:1.25vw;margin-top:.4vw;color:#ffd27a;text-shadow:0 1px 6px rgba(0,0,0,.8)}
           .card{width:33vw;border-radius:2.2vw;padding:1.8vw 2vw}
           #ayah{font-size:2.3vw;line-height:1.9;margin:.8vw 0;font-family:'Noto Naskh Arabic','Amiri',serif}
 
@@ -441,7 +442,7 @@ jobs:
           .dockwrap{display:flex;justify-content:center;padding-bottom:.4vw}
           .dock{display:flex;align-items:flex-start;padding:1.1vw 1.5vw .8vw;border-radius:3.4vw}
           #apps{outline:none}
-          .t{background:none;border:none;display:flex;flex-direction:column;align-items:center;width:8.4vw;margin:0 .75vw;cursor:pointer;transition:transform .22s cubic-bezier(.2,.9,.3,1.3);outline:none;position:relative}
+          .t{background:none;border:none;display:flex;flex-direction:column;align-items:center;width:8.2vw;margin:0 .6vw;cursor:pointer;transition:transform .22s cubic-bezier(.2,.9,.3,1.3);outline:none;position:relative}
           .ic{position:relative;width:7.2vw;height:7.2vw;border-radius:1.75vw;display:flex;align-items:center;justify-content:center;overflow:hidden;
            background:linear-gradient(150deg,rgba(255,255,255,.38),rgba(255,255,255,.1) 55%,rgba(255,255,255,.2));
            border:1px solid rgba(255,255,255,.5);
@@ -450,13 +451,13 @@ jobs:
           .ic img{width:74%;height:74%;border-radius:20%;object-fit:cover;filter:drop-shadow(0 .25vw .5vw rgba(0,0,0,.35))}
           .ic svg{width:52%;height:52%;filter:drop-shadow(0 .2vw .4vw rgba(0,0,0,.35))}
           .ic .ch{font-size:3.4vw;font-weight:700;text-shadow:0 2px 6px rgba(0,0,0,.4)}
-          .lb{margin-top:.55vw;font-size:1.32vw;font-weight:500;text-shadow:0 1px 6px rgba(0,0,0,.75);white-space:nowrap;max-width:8.4vw;overflow:hidden;text-overflow:ellipsis}
+          .lb{margin-top:.55vw;font-size:1.32vw;font-weight:500;text-shadow:0 1px 6px rgba(0,0,0,.75);white-space:nowrap;max-width:8.2vw;overflow:hidden;text-overflow:ellipsis}
           .t.off .ic{opacity:.45;filter:grayscale(.6)}
           .t:focus{transform:translateY(-.9vw) scale(1.2);z-index:2}
           .t:focus .ic{border-color:#fff;box-shadow:0 0 0 .28vw rgba(255,255,255,.95),0 1.3vw 3vw rgba(0,0,0,.5),0 0 3vw rgba(255,255,255,.35),inset 0 1px 0 rgba(255,255,255,.85)}
           .t:focus .lb{font-weight:700}
 
-          /* ===== النوافذ المنبثقة (HDMI + التطبيقات) ===== */
+          /* ===== النوافذ المنبثقة (HDMI + التطبيقات + الوقت) ===== */
           .ov{position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(5,8,18,.45);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
           .ov.show{display:flex;animation:fi .25s ease-out}
           @keyframes fi{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
@@ -482,6 +483,15 @@ jobs:
           #grid .t{width:9vw;margin:0 auto}
           #grid .lb{max-width:9vw;font-size:1.2vw}
 
+          /* ضبط الوقت */
+          .tf{display:flex;align-items:center;justify-content:center}
+          .tf .btn{margin:0 1vw}
+          .fld{width:9vw;margin:0 .6vw;border-radius:2vw;padding:.9vw .5vw;background:linear-gradient(150deg,rgba(255,255,255,.3),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.4);outline:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;transition:transform .2s}
+          .fld .v{font-size:3.2vw;font-weight:700;line-height:1.3}
+          .fld .u{font-size:1.2vw;opacity:.75}
+          .fld .a{font-size:1.5vw;opacity:.7}
+          .fld:focus{transform:scale(1.1);border-color:#fff;box-shadow:0 0 0 .26vw #fff,0 1.2vw 3vw rgba(0,0,0,.45)}
+
           /* الأذان */
           #adhan{display:none;position:fixed;top:0;left:0;right:0;bottom:0;align-items:center;justify-content:center;pointer-events:none;z-index:15}
           #adhan .big{background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.4);border-radius:2.4vw;padding:2.4vw 5vw;font-size:3.6vw}
@@ -495,7 +505,7 @@ jobs:
               <div class="wx"><div id="temp">--°</div><div class="sm" id="cond"></div><div class="sm" id="hl"></div><div class="sm" id="city"></div></div>
             </div>
             <div class="mid">
-              <div class="clock"><div id="time">--:--</div><div id="ampm"></div></div>
+              <div class="clock"><div id="time">--:--</div><div id="ampm"></div><div id="tsrc"></div></div>
               <div class="card glass"><div class="sm">آية اليوم</div><div id="ayah"></div><div class="sm" id="sura"></div></div>
             </div>
             <div>
@@ -517,15 +527,24 @@ jobs:
             <div id="grid"></div>
           </div></div>
 
+          <div class="ov" id="ovTime"><div class="sheet glass">
+            <h2>ضبط التاريخ والوقت</h2><p>يمين / يسار للتنقل، أعلى / أسفل لتغيير القيمة، ثم اضغط حفظ (التوقيت: السعودية)</p>
+            <div class="tf" id="tfields"></div>
+            <div class="hint">زر الرجوع للإغلاق</div>
+          </div></div>
+
           <script>
           var $=function(i){return document.getElementById(i)};
           var AND=window.Android||null;
 
           /* ================== الإعدادات (عدّلها هنا) ================== */
           var LAT=31.33,LON=37.34,CITY='القريات',TZ='Asia/Riyadh';
+          var TZOFF=3*36e5;             /* توقيت السعودية UTC+3 (ثابت بدون توقيت صيفي) */
           var BG_SECONDS=30;            /* مدة كل خلفية */
           var BG_W=3840,BG_H=2160;      /* دقة 4K */
-          var RAMADAN=new Date(2027,1,8);
+          var RAMADAN=new Date(Date.UTC(2027,1,8));
+          /* وقت بناء التطبيق (يُستبدل تلقائياً أثناء البناء) - يُستخدم كحد أدنى للوقت الصحيح */
+          var BUILD_TS=Number('__BUILD_TS__')||0;
           /* صور واقعية عالية الجودة من Unsplash (إن تعطّلت صورة يتم تخطيها تلقائياً) */
           var PHOTO_IDS=['photo-1506744038136-46273834b3fb','photo-1469474968028-56623f02e42e','photo-1441974231531-c6227db76b6e','photo-1507525428034-b723cf961d3e','photo-1470071459604-3b5ec3a7fe05','photo-1464822759023-fed622ff2c3b','photo-1501785888041-af3ef285b470','photo-1472214103451-9374bd1c798e','photo-1500530855697-b586d89ba3ee','photo-1519681393784-d120267933ba','photo-1476514525535-07fb3b4ae5f1','photo-1433086966358-54859d0ed716','photo-1509316785289-025f5b846b35','photo-1473580044384-7ba9967e16a0','photo-1518837695005-2083093ee35b','photo-1505118380757-91f5f5632de0','photo-1419242902214-272b3f66ee7a','photo-1447752875215-b2761acb3c5d','photo-1502082553048-f009c37129b9'];
           var BACKUP_SEEDS=['shasha1','shasha2','shasha3','shasha4','shasha5','shasha6'];
@@ -536,6 +555,63 @@ jobs:
           function z(x){return(x<10?'0':'')+x}
           function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
           function L(spec){if(AND)AND.launch(spec)}
+          function sv(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+          function ld(k){try{return localStorage.getItem(k)}catch(e){return null}}
+
+          /* ================== الساعة الموثوقة (تعمل بدون إنترنت) ==================
+             التلفزيون لا يملك بطارية ساعة، فبعد الفصل بدون إنترنت يرجع لتاريخ قديم.
+             الحل: نحفظ آخر وقت صحيح، ونستخدم OFF لتصحيح ساعة النظام، ونحسب كل شيء بتوقيت السعودية. */
+          var OFF=0,synced=false,manual=false;
+          function nowMs(){return Date.now()+OFF}
+          function wall(){return new Date(nowMs()+TZOFF)}   /* استخدم getUTC* للقراءة */
+          function saveClock(){sv('lastTrue',String(nowMs()))}
+          (function(){
+            var floor=Math.max(BUILD_TS,+ld('lastTrue')||0),sys=Date.now();
+            OFF=sys<floor?floor-sys:0;   /* إن كانت ساعة النظام أقدم من آخر وقت معروف فهي خاطئة */
+          })();
+          var TS=[
+            function(){return fetch('https://worldtimeapi.org/api/timezone/Etc/UTC').then(function(r){return r.json()}).then(function(j){return j.unixtime*1000})},
+            function(){return fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC').then(function(r){return r.json()}).then(function(j){return Date.parse(String(j.dateTime).slice(0,19)+'Z')})},
+            function(){return fetch('https://www.cloudflare.com/cdn-cgi/trace').then(function(r){return r.text()}).then(function(t){return parseFloat(/ts=([\d.]+)/.exec(t)[1])*1000})}
+          ];
+          function syncTime(){
+            var i=0;
+            (function next(){
+              if(i>=TS.length)return;
+              var t0=performance.now();
+              TS[i++]().then(function(ms){
+                if(!(ms>BUILD_TS))throw 0;
+                OFF=ms+(performance.now()-t0)/2-Date.now();
+                synced=true;saveClock();curDay='';tick()
+              }).catch(next)
+            })()}
+
+          /* ================== التاريخ الهجري (حساب محلي) ================== */
+          var HM=['محرم','صفر','ربيع الأول','ربيع الآخر','جمادى الأولى','جمادى الآخرة','رجب','شعبان','رمضان','شوال','ذو القعدة','ذو الحجة'];
+          function toHijri(y,m,d){
+            var jd=Math.floor(Date.UTC(y,m-1,d)/864e5)+2440588;
+            var l=jd-1948440+10632,n=Math.floor((l-1)/10631);
+            l=l-10631*n+354;
+            var j=Math.floor((10985-l)/5316)*Math.floor(50*l/17719)+Math.floor(l/5670)*Math.floor(43*l/15238);
+            l=l-Math.floor((30-j)/15)*Math.floor(17719*j/50)-Math.floor(j/16)*Math.floor(15238*j/43)+29;
+            var mo=Math.floor(24*l/709),dd=l-Math.floor(709*mo/24);
+            return{day:dd,month:mo,year:30*n+j-30}}
+
+          /* ================== أوقات الصلاة (حساب محلي - أم القرى) ================== */
+          function hm(h){h=((h%24)+24)%24;var m=Math.round(h*60);return z(Math.floor(m/60)%24)+':'+z(m%60)}
+          function calcPrayer(d,ram){
+            var R=Math.PI/180,jd=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),9)/864e5+2440587.5,n=jd-2451545.0;
+            var g=(357.529+0.98560028*n)%360,q=(280.459+0.98564736*n)%360;
+            var Ls=(q+1.915*Math.sin(g*R)+0.020*Math.sin(2*g*R))%360,e=23.439-0.00000036*n;
+            var RA=Math.atan2(Math.cos(e*R)*Math.sin(Ls*R),Math.cos(Ls*R))/R/15;
+            RA=((RA%24)+24)%24;
+            var eqt=q/15-RA;if(eqt>12)eqt-=24;if(eqt<-12)eqt+=24;
+            var decl=Math.asin(Math.sin(e*R)*Math.sin(Ls*R)),lat=LAT*R;
+            var noon=12+3-LON/15-eqt;
+            function ang(a){var c=(-Math.sin(a*R)-Math.sin(decl)*Math.sin(lat))/(Math.cos(decl)*Math.cos(lat));c=Math.max(-1,Math.min(1,c));return Math.acos(c)/R/15}
+            var asrA=-Math.atan(1/(1+Math.tan(Math.abs(lat-decl))))/R;
+            var mag=noon+ang(0.833);
+            return{Fajr:hm(noon-ang(18.5)),Dhuhr:hm(noon),Asr:hm(noon+ang(asrA)),Maghrib:hm(mag),Isha:hm(mag+(ram?2:1.5))}}
 
           /* ================== الخلفيات ================== */
           var URLS=[],BK=[],bi=0,bcur=0,bfails=0,bnext=null,btimer=null,bgLayers=[$('bgA'),$('bgB')];
@@ -566,25 +642,40 @@ jobs:
             prepareNext();
             btimer=setTimeout(showBg,BG_SECONDS*1000)}
           function startBg(){prepareNext();showBg()}
-          window.addEventListener('online',function(){bfails=0;if(bnext&&!bnext.ready)prepareNext()});
+          window.addEventListener('online',function(){bfails=0;if(bnext&&!bnext.ready)prepareNext();syncTime();prayer();weather()});
 
           /* ================== بيانات اليوم ================== */
-          var P=[['Fajr','الفجر'],['Dhuhr','الظهر'],['Asr','العصر'],['Maghrib','المغرب'],['Isha','العشاء']],T=null,H=null,cur='';
+          var P=[['Fajr','الفجر'],['Dhuhr','الظهر'],['Asr','العصر'],['Maghrib','المغرب'],['Isha','العشاء']],T=null,H=null,cur='',curDay='';
           var DY=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
           var MN=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
           var AY=[["وَقُل رَّبِّ أَعُوذُ بِكَ مِنْ هَمَزَاتِ الشَّيَاطِينِ","سورة المؤمنون ٩٧"],["أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ","سورة الرعد ٢٨"],["فَإِنَّ مَعَ الْعُسْرِ يُسْرًا","سورة الشرح ٥"],["وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ","سورة الطلاق ٣"],["رَبِّ اشْرَحْ لِي صَدْرِي","سورة طه ٢٥"],["إِنَّ اللَّهَ مَعَ الصَّابِرِينَ","سورة البقرة ١٥٣"],["وَقُل رَّبِّ زِدْنِي عِلْمًا","سورة طه ١١٤"]];
-          var a=AY[Math.floor(Date.now()/864e5)%AY.length];
-          $('ayah').textContent='﴿'+a[0]+'﴾';$('sura').textContent=a[1];$('city').textContent=CITY;
-          function at(s,add){var d=new Date(),p=String(s).slice(0,5).split(':');d.setHours(+p[0],+p[1],0,0);d.setDate(d.getDate()+add);return d}
+          $('city').textContent=CITY;
+          function dayKey(d){return d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate()}
+          /* تجهيز بيانات اليوم: من الذاكرة إن كانت لليوم نفسه، وإلا حساب محلي */
+          function prep(d){
+            var k=dayKey(d);
+            if(k===curDay)return;
+            curDay=k;
+            var c=null;try{c=JSON.parse(ld('ptc')||'null')}catch(e){}
+            var ok=c&&c.k===k;
+            var lh=toHijri(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate());
+            H=(ok&&c.H)?c.H:{day:lh.day,month:{ar:HM[lh.month-1]},year:lh.year};
+            T=(ok&&c.T)?c.T:calcPrayer(d,lh.month===9);
+            var a=AY[Math.floor((nowMs()+TZOFF)/864e5)%AY.length];
+            $('ayah').textContent='﴿'+a[0]+'﴾';$('sura').textContent=a[1];
+            cur='';lastMin=-1}
+          function at(s,add){var d=wall(),p=String(s).slice(0,5).split(':');d.setUTCHours(+p[0],+p[1],0,0);d.setUTCDate(d.getUTCDate()+add);return d}
           function f12(s){var p=String(s).slice(0,5).split(':'),h=+p[0];return ar((h%12||12)+':'+p[1])+(h<12?' ص':' م')}
           function hello(h){return h<5?'ليلة سعيدة':h<12?'صباح الخير':h<17?'طاب يومك':h<20?'مساء الخير':'مساء النور'}
           var lastMin=-1;
           function tick(){
-            var d=new Date(),h=d.getHours(),m=d.getMinutes();
-            if(m!==lastMin){lastMin=m;
+            var d=wall();prep(d);
+            var h=d.getUTCHours(),m=d.getUTCMinutes();
+            if(m!==lastMin){lastMin=m;saveClock();
               $('time').textContent=ar((h%12||12)+':'+z(m));$('ampm').textContent=h<12?'ص':'م';
-              $('gr').textContent=ar(d.getDate())+' '+MN[d.getMonth()]+' '+ar(d.getFullYear());
-              $('hj').textContent=DY[d.getDay()]+(H?'، '+ar(H.day)+' '+H.month.ar+' '+ar(H.year)+' هـ':'');
+              $('tsrc').textContent=(!synced&&!manual&&OFF!==0)?'⚠ الوقت تقديري (لا يوجد إنترنت) — اضبطه من زر الوقت':'';
+              $('gr').textContent=ar(d.getUTCDate())+' '+MN[d.getUTCMonth()]+' '+ar(d.getUTCFullYear());
+              $('hj').textContent=DY[d.getUTCDay()]+(H?'، '+ar(H.day)+' '+H.month.ar+' '+ar(H.year)+' هـ':'');
               $('hello').textContent=hello(h);
               var r=Math.ceil((RAMADAN-d)/864e5);
               $('ram').innerHTML=r>0?'<div class="sm">رمضان ١٤٤٨</div><div class="big">'+ar(r)+' يوم</div>':''}
@@ -601,18 +692,27 @@ jobs:
           function draw(){var h='';for(var i=0;i<5;i++){h+='<div class="pt'+(P[i][1]===cur?' on':'')+'"><div class="sm">'+P[i][1]+'</div><div>'+f12(T[P[i][0]])+'</div></div>'}$('list').innerHTML=h}
           function prayer(){
             fetch('https://api.aladhan.com/v1/timings?latitude='+LAT+'&longitude='+LON+'&method=4&timezonestring='+TZ)
-            .then(function(r){return r.json()}).then(function(j){T=j.data.timings;H=j.data.date.hijri;cur='';lastMin=-1;tick()}).catch(function(){})}
+            .then(function(r){return r.json()}).then(function(j){
+              T=j.data.timings;H=j.data.date.hijri;
+              sv('ptc',JSON.stringify({k:dayKey(wall()),T:T,H:H}));
+              cur='';lastMin=-1;tick()}).catch(function(){})}
           function wc(c){if(c==0)return'صحو';if(c<3)return'غائم جزئياً';if(c==3)return'غائم';if(c==45||c==48)return'ضباب';if(c<60)return'رذاذ';if(c<70)return'مطر';if(c<80)return'ثلج';if(c<90)return'زخات مطر';return'عاصفة رعدية'}
+          function showWx(w){
+            $('temp').textContent=ar(w.t)+'°';$('cond').textContent=w.c;$('hl').textContent=w.hl;
+            $('temp').style.opacity=(nowMs()-w.ts>108e5)?.5:1}
           function weather(){
             fetch('https://api.open-meteo.com/v1/forecast?latitude='+LAT+'&longitude='+LON+'&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto')
             .then(function(r){return r.json()}).then(function(j){
-              $('temp').textContent=ar(Math.round(j.current.temperature_2m))+'°';$('cond').textContent=wc(j.current.weather_code);
-              $('hl').textContent='↑'+ar(Math.round(j.daily.temperature_2m_max[0]))+'° ↓'+ar(Math.round(j.daily.temperature_2m_min[0]))+'°'}).catch(function(){})}
+              var w={t:Math.round(j.current.temperature_2m),c:wc(j.current.weather_code),
+                hl:'↑'+ar(Math.round(j.daily.temperature_2m_max[0]))+'° ↓'+ar(Math.round(j.daily.temperature_2m_min[0]))+'°',ts:nowMs()};
+              sv('wx',JSON.stringify(w));showWx(w)}).catch(function(){})}
+          try{var w0=JSON.parse(ld('wx')||'null');if(w0)showWx(w0)}catch(e){}
 
           /* ================== الدوك ================== */
           var GEAR='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 2.8l1.5 2.4 2.8-.6.9 2.7 2.7.9-.6 2.8 2.4 1.5-2.4 1.5.6 2.8-2.7.9-.9 2.7-2.8-.6L12 21.2l-1.5-2.4-2.8.6-.9-2.7-2.7-.9.6-2.8L2.3 12l2.4-1.5-.6-2.8 2.7-.9.9-2.7 2.8.6z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
           var HD='<svg viewBox="0 0 24 24"><path d="M3 6.5h18v7.2l-3.2 3.3H15v2H9v-2H6.2L3 13.7z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 10h10M7 12.6h10" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>';
           var GRID='<svg viewBox="0 0 24 24" fill="#fff"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
+          var CLK='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M12 7v5.2l3.4 2" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
           var DOCK=[
             {label:'ثمانية',spec:'name:ثمانية|thmanyah',logo:'thmanyah.png'},
             {label:'شاشا',spec:'name:شاشا|shasha',logo:'shasha.png'},
@@ -621,6 +721,7 @@ jobs:
             {label:'Netflix',spec:'pkg:com.netflix.ninja',logo:'netflix.png'},
             {label:'HDMI',act:'hdmi',svg:HD},
             {label:'التطبيقات',act:'apps',svg:GRID},
+            {label:'الوقت',act:'time',svg:CLK},
             {label:'الإعدادات',spec:'settings',svg:GEAR}
           ];
           var lastTile=null;
@@ -649,7 +750,7 @@ jobs:
             var dk=$('apps');dk.innerHTML='';
             DOCK.forEach(function(o){
               var b=mkTile(o,function(){
-                if(o.act==='hdmi')openHdmi();else if(o.act==='apps')openApps();else L(o.spec)});
+                if(o.act==='hdmi')openHdmi();else if(o.act==='apps')openApps();else if(o.act==='time')openTime();else L(o.spec)});
               o.el=b;dk.appendChild(b);setTile(b,o)})}
           function refreshDock(){DOCK.forEach(function(o){if(o.el)setTile(o.el,o)})}
 
@@ -676,6 +777,32 @@ jobs:
               var b=mkTile({label:p.label},function(){closeOv();L('pkg:'+p.pkg)});
               fillIcon(b.firstChild,p.pkg,p.label);g.appendChild(b)});
             showOv('ovApps',g.querySelector('[data-f]'))}
+
+          /* ================== ضبط الوقت يدوياً ================== */
+          var TF=null;
+          var FL=[['y','السنة',2025,2045],['mo','الشهر',1,12],['d','اليوم',1,31],['h','الساعة',0,23],['mi','الدقيقة',0,59]];
+          function dim(y,m){return new Date(Date.UTC(y,m,0)).getUTCDate()}
+          function paintTf(){FL.forEach(function(f){var k=f[0];$('f_'+k).querySelector('.v').textContent=ar((k==='h'||k==='mi')?z(TF[k]):TF[k])})}
+          function openTime(){
+            var d=wall();
+            TF={y:d.getUTCFullYear(),mo:d.getUTCMonth()+1,d:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes()};
+            var box=$('tfields');box.innerHTML='';
+            FL.forEach(function(f){
+              var b=document.createElement('button');b.className='fld';b.id='f_'+f[0];
+              b.setAttribute('data-f','1');b.setAttribute('data-k',f[0]);
+              b.innerHTML='<div class="a">▲</div><div class="v"></div><div class="a">▼</div><div class="u">'+f[1]+'</div>';
+              box.appendChild(b)});
+            var s=document.createElement('button');s.className='btn';s.setAttribute('data-f','1');s.textContent='حفظ';s.onclick=saveTime;box.appendChild(s);
+            paintTf();showOv('ovTime',$('f_h'))}
+          function adj(k,dir){
+            var f=FL.filter(function(x){return x[0]===k})[0],mx=(k==='d')?dim(TF.y,TF.mo):f[3],v=TF[k]+dir;
+            if(v>mx)v=f[2];if(v<f[2])v=mx;
+            TF[k]=v;
+            var md=dim(TF.y,TF.mo);if(TF.d>md)TF.d=md;
+            paintTf()}
+          function saveTime(){
+            var ms=Date.UTC(TF.y,TF.mo-1,TF.d,TF.h,TF.mi,0)-TZOFF;
+            OFF=ms-Date.now();manual=true;saveClock();curDay='';closeOv();tick()}
 
           /* ================== النوافذ + التنقل بالريموت ================== */
           var openOvEl=null;
@@ -707,7 +834,11 @@ jobs:
             var k=e.key,c=e.keyCode,d=null;
             if(k==='ArrowLeft'||c===21)d='L';else if(k==='ArrowRight'||c===22)d='R';
             else if(k==='ArrowUp'||c===19)d='U';else if(k==='ArrowDown'||c===20)d='D';
-            if(d){e.preventDefault();move(d);return}
+            if(d){
+              var a0=document.activeElement;
+              if((d==='U'||d==='D')&&openOvEl&&openOvEl.id==='ovTime'&&a0&&a0.getAttribute&&a0.getAttribute('data-k')){
+                e.preventDefault();adj(a0.getAttribute('data-k'),d==='U'?1:-1);return}
+              e.preventDefault();move(d);return}
             if(k==='Enter'||c===13||c===23||c===66){
               var a=document.activeElement;
               if(a&&a.getAttribute&&a.getAttribute('data-f')){e.preventDefault();a.click()}return}
@@ -720,11 +851,13 @@ jobs:
           /* ================== تشغيل ================== */
           buildDock();
           var f0=$('apps').firstChild;if(f0)f0.focus();
-          startBg();prayer();weather();tick();
-          setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);
+          tick();
+          startBg();syncTime();prayer();weather();
+          setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);setInterval(syncTime,6e5);
           setTimeout(refreshDock,4000);
           </script></body></html>
           EOF
+          sed -i "s/__BUILD_TS__/$(date +%s)000/" app/src/main/assets/index.html
       - uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
