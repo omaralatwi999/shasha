@@ -184,12 +184,12 @@ jobs:
           <meta name="viewport" content="width=device-width,initial-scale=1">
           <style>
           *{box-sizing:border-box;margin:0}
-          html,body{height:100%;overflow:hidden;background:#111;color:#fff;font-family:'Noto Naskh Arabic','Noto Sans Arabic',sans-serif}
-          #bg,.shade{position:fixed;left:0;top:0;width:100%;height:100%}
-          .shade{background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.12) 40%,rgba(0,0,0,.6))}
-          .scene{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;transition:opacity 4s}
+          html,body{height:100%;overflow:hidden;background:#000;color:#fff;font-family:'Noto Naskh Arabic','Noto Sans Arabic',sans-serif}
+          #bg,.shade{position:fixed;left:0;top:0;width:100%;height:100%;z-index:-1}
+          .shade{background:radial-gradient(circle at center, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.65) 100%);z-index:0}
+          .scene{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;transition:opacity 5s ease-in-out;filter:brightness(0.95)}
           .scene.on{opacity:1}
-          .page{position:fixed;left:0;top:0;width:100%;height:100%;padding:2.5vw 4vw 3vw;display:flex;flex-direction:column;justify-content:space-between}
+          .page{position:fixed;left:0;top:0;width:100%;height:100%;padding:2.5vw 4vw 3vw;display:flex;flex-direction:column;justify-content:space-between;z-index:1}
           .top,.mid,.bot{display:flex;justify-content:space-between}
           .top{align-items:flex-start}
           .mid{align-items:center}
@@ -199,26 +199,26 @@ jobs:
           #hj{font-size:2.6vw;font-weight:700}
           #temp{font-size:4.5vw;font-weight:700;line-height:1.1}
           .wx{text-align:left}
-          #time{font-size:13vw;font-weight:700;line-height:1}
+          #time{font-size:13vw;font-weight:700;line-height:1;text-shadow:0 0 40px rgba(0,0,0,0.5)}
           #ampm{font-size:3.5vw}
           .clock{text-align:center}
-          .card{width:36vw;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);border-radius:2vw;padding:2vw}
+          .card{width:36vw;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:2vw;padding:2vw;backdrop-filter:blur(25px);-webkit-backdrop-filter:blur(25px);box-shadow:0 1.5vw 3.5vw rgba(0,0,0,0.3)}
           #ayah{font-size:2.5vw;line-height:1.9;margin:1vw 0}
           .pr{display:flex;gap:1.2vw}
-          .pt{text-align:center;padding:.5vw 1vw;border-radius:1vw;font-size:1.7vw}
-          .pt.on{background:rgba(255,255,255,.3)}
-          .apps{display:flex;gap:2vw;justify-content:center}
-          .t{background:none;border:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:.7vw;color:#fff;font-family:inherit;transition:transform .2s}
-          .ic{width:7.5vw;height:7.5vw;border-radius:2vw;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 1vw 2.5vw rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;overflow:hidden}
-          .ic img{width:68%;height:68%;border-radius:22%}
+          .pt{text-align:center;padding:.5vw 1vw;border-radius:1vw;font-size:1.7vw;background:rgba(0,0,0,0.2);backdrop-filter:blur(10px)}
+          .pt.on{background:rgba(255,255,255,0.35);box-shadow:0 0 15px rgba(255,255,255,0.4)}
+          .apps{display:flex;gap:1.8vw;justify-content:center;align-items:center}
+          .t{background:none;border:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:.8vw;color:#fff;font-family:inherit;transition:transform .25s cubic-bezier(0.2, 0.8, 0.2, 1);cursor:pointer}
+          .ic{width:7.2vw;height:7.2vw;border-radius:1.8vw;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 1vw 2.5vw rgba(0,0,0,0.35),inset 0 1px 1px rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+          .ic img{width:72%;height:72%;object-fit:contain;border-radius:20%}
           .ic svg{width:55%;height:55%}
-          .ic span{font-size:3.6vw;font-weight:700}
-          .lb{font-size:1.5vw;text-shadow:0 1px 6px rgba(0,0,0,.6)}
-          .t:focus{outline:none;transform:scale(1.14)}
-          .t:focus .ic{border-color:#fff;box-shadow:0 0 0 .3vw #fff,0 1.2vw 3vw rgba(0,0,0,.4)}
-          .t:focus .lb{font-weight:700}
-          #adhan{display:none;position:fixed;left:0;top:0;width:100%;height:100%;align-items:center;justify-content:center;pointer-events:none}
-          #adhan .big{background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.35);border-radius:2vw;padding:2.5vw 5vw;font-size:4vw}
+          .ic span{font-size:3.2vw;font-weight:700}
+          .lb{font-size:1.4vw;text-shadow:0 1px 6px rgba(0,0,0,0.7);transition:font-weight .2s}
+          .t:focus{outline:none;transform:scale(1.18);z-index:5}
+          .t:focus .ic{border-color:#fff;background:rgba(255,255,255,0.32);box-shadow:0 0 0 .35vw rgba(255,255,255,0.85),0 1.5vw 3.5vw rgba(0,0,0,0.6)}
+          .t:focus .lb{font-weight:700;text-shadow:0 0 12px rgba(255,255,255,0.9)}
+          #adhan{display:none;position:fixed;left:0;top:0;width:100%;height:100%;align-items:center;justify-content:center;pointer-events:none;z-index:10}
+          #adhan .big{background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.4);backdrop-filter:blur(20px);border-radius:2vw;padding:2.5vw 5vw;font-size:4vw}
           </style></head><body>
           <div id="bg"></div><div class="shade"></div>
           <div class="page">
@@ -266,33 +266,42 @@ jobs:
           function prayer(){fetch('https://api.aladhan.com/v1/timings?latitude='+LAT+'&longitude='+LON+'&method=4').then(function(r){return r.json()}).then(function(j){T=j.data.timings;H=j.data.date.hijri;cur='';tick()}).catch(function(){})}
           function wc(c){if(c==0)return'صحو';if(c<3)return'غائم جزئياً';if(c==3)return'غائم';if(c==45||c==48)return'ضباب';if(c<60)return'رذاذ';if(c<70)return'مطر';if(c<80)return'ثلج';if(c<90)return'زخات مطر';return'عاصفة رعدية'}
           function weather(){fetch('https://api.open-meteo.com/v1/forecast?latitude='+LAT+'&longitude='+LON+'&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto').then(function(r){return r.json()}).then(function(j){$('temp').textContent=ar(Math.round(j.current.temperature_2m))+'°';$('cond').textContent=wc(j.current.weather_code);$('hl').textContent='↑'+ar(Math.round(j.daily.temperature_2m_max[0]))+'° ↓'+ar(Math.round(j.daily.temperature_2m_min[0]))+'°'}).catch(function(){})}
+          
+          /* خلفيات تفاعلية سينمائية تحاكي Apple TV بدقة */
           var SC=[
-          {s:['#f3c892','#dc8f6b','#6b4e7e'],l:[['#c9774f','M0 640 Q250 560 520 630 T1050 600 T1600 640 V900H0Z'],['#a65a40','M0 720 Q350 650 760 720 T1600 700 V900H0Z'],['#6f3b3a','M0 810 Q450 760 900 805 T1600 790 V900H0Z']]},
-          {s:['#c3cde0','#9aa7c4','#6a7798'],l:[['#8c97b6','M0 600 L180 470 L340 560 L560 390 L760 540 L960 430 L1180 560 L1400 450 L1600 560 V900H0Z'],['#6d7a9d','M0 690 L220 560 L420 650 L650 500 L880 650 L1120 540 L1360 660 L1600 590 V900H0Z'],['#4b5678','M0 790 L260 690 L520 770 L800 680 L1080 780 L1340 700 L1600 780 V900H0Z']]},
-          {s:['#0b1230','#1a2552','#34407a'],st:1,l:[['#1b2142','M0 690 L260 560 L520 680 L780 520 L1060 670 L1320 560 L1600 690 V900H0Z'],['#10152e','M0 800 L300 710 L620 790 L940 700 L1280 790 L1600 730 V900H0Z']]},
-          {s:['#d6dfeb','#b3bfd3','#e7b98f'],l:[['#8a6a5c','M0 560 L140 560 L170 430 L420 430 L450 580 L700 580 L730 470 L1000 470 L1030 600 L1300 600 L1330 500 L1600 500 V900H0Z'],['#6b4f48','M0 700 L240 700 L270 600 L560 600 L600 720 L900 720 L940 640 L1260 640 L1300 740 L1600 740 V900H0Z'],['#3e2e33','M0 820 H1600 V900H0Z']]}];
-          function scene(o,i){var g='<defs><linearGradient id="g'+i+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+o.s[0]+'"/><stop offset=".55" stop-color="'+o.s[1]+'"/><stop offset="1" stop-color="'+o.s[2]+'"/></linearGradient></defs><rect width="1600" height="900" fill="url(#g'+i+')"/>';
-          if(o.st){for(var k=0;k<60;k++){g+='<circle cx="'+((k*97)%1600)+'" cy="'+((k*53)%420)+'" r="'+(1+(k%3)*.6)+'" fill="#fff" opacity="'+(.3+(k%4)*.15)+'"/>'}}
-          for(var n=0;n<o.l.length;n++){g+='<path d="'+o.l[n][1]+'" fill="'+o.l[n][0]+'"/>'}
+          {s:['#0a192f','#172a45','#203a43'],st:1,l:[['#132238','M0 580 Q300 480 650 560 T1300 520 T1600 580 V900H0Z'],['#0d1b2a','M0 700 Q400 620 900 680 T1600 650 V900H0Z']]},
+          {s:['#2c1630','#4a2040','#1f1c2c'],st:1,l:[['#3d1f38','M0 550 Q350 450 750 530 T1500 500 T1600 550 V900H0Z'],['#251322','M0 680 Q450 590 1000 660 T1600 630 V900H0Z']]},
+          {s:['#051937','#004d7a','#008793'],l:[['#04325c','M0 600 Q300 500 700 580 T1400 540 T1600 600 V900H0Z'],['#02223f','M0 720 Q450 630 950 700 T1600 680 V900H0Z']]},
+          {s:['#141E30','#243B55','#0f2027'],st:1,l:[['#1c2d42','M0 570 Q350 470 800 550 T1500 520 T1600 570 V900H0Z'],['#0d1724','M0 690 Q400 600 900 670 T1600 650 V900H0Z']]}];
+
+          function scene(o,i){var g='<defs><linearGradient id="g'+i+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="'+o.s[0]+'"/><stop offset="50%" stop-color="'+o.s[1]+'"/><stop offset="100%" stop-color="'+o.s[2]+'"/></linearGradient></defs><rect width="1600" height="900" fill="url(#g'+i+')"/>';
+          if(o.st){for(var k=0;k<80;k++){g+='<circle cx="'+((k*83)%1600)+'" cy="'+((k*47)%500)+'" r="'+(0.8+(k%3)*0.8)+'" fill="#ffffff" opacity="'+(0.2+(k%5)*0.15)+'"/>'}}
+          for(var n=0;n<o.l.length;n++){g+='<path d="'+o.l[n][1]+'" fill="'+o.l[n][0]+'" opacity="0.85"/>'}
           return'<svg class="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">'+g+'</svg>'}
+          
           $('bg').innerHTML=SC.map(scene).join('');
           var els=$('bg').getElementsByClassName('scene'),si=0;els[0].classList.add('on');
-          setInterval(function(){els[si].classList.remove('on');si=(si+1)%els.length;els[si].classList.add('on')},90000);
+          setInterval(function(){els[si].classList.remove('on');si=(si+1)%els.length;els[si].classList.add('on')},12000);
+
           var GEAR='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="#fff" stroke-width="2.6" stroke-dasharray="3.3 3.3"/></svg>';
           var HD='<svg viewBox="0 0 24 24"><path d="M3 7h18v7l-3 3h-3v2H9v-2H6l-3-3z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 10.5h10" stroke="#fff" stroke-width="1.8"/></svg>';
+          
           function addTile(label,spec,svg){
           var b=document.createElement('button');b.className='t';b.onclick=function(){L(spec)};
           var u=(svg||!window.Android)?'':Android.icon(spec),h='<div class="ic">';
           if(svg)h+=svg;else if(u)h+='<img src="'+u+'">';else h+='<span>'+label.charAt(0)+'</span>';
           b.innerHTML=h+'</div><div class="lb">'+label+'</div>';$('apps').appendChild(b)}
+          
           addTile('ثمانية','name:ثمانية|thmanyah');
           addTile('شاشا','name:شاشا|shasha');
           addTile('Google Play','pkg:com.android.vending');
           addTile('YouTube','pkg:com.google.android.youtube.tv');
           addTile('Netflix','pkg:com.netflix.ninja');
+          
           var ins=window.Android?Android.inputs():'';
           if(ins){ins.split('\n').forEach(function(l){if(l){var p=l.split('\t');addTile(p[1]||'HDMI','input:'+p[0],HD)}})}else addTile('HDMI','name:تلفزيون مباشر|live tv',HD);
           addTile('الإعدادات','settings',GEAR);
+          
           try{$('apps').firstChild.focus()}catch(e){}
           prayer();weather();tick();setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);
           </script></body></html>
