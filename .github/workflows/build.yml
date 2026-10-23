@@ -67,22 +67,57 @@ jobs:
           package com.om.shasha;
           import android.app.Activity;
           import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.content.pm.ResolveInfo;
           import android.os.Bundle;
           import android.provider.Settings;
           import android.webkit.JavascriptInterface;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
+          import android.widget.Toast;
+          import java.util.List;
           public class MainActivity extends Activity {
+            Intent byName(String q) {
+              PackageManager pm = getPackageManager();
+              String[] keys = q.toLowerCase().split("\\|");
+              String[] cats = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
+              for (String c : cats) {
+                Intent m = new Intent(Intent.ACTION_MAIN);
+                m.addCategory(c);
+                List<ResolveInfo> l = pm.queryIntentActivities(m, 0);
+                for (ResolveInfo r : l) {
+                  String pkg = r.activityInfo.packageName;
+                  if (pkg.equals(getPackageName())) continue;
+                  String label = r.loadLabel(pm).toString().toLowerCase();
+                  for (String k : keys) {
+                    if (k.length() > 0 && label.contains(k)) {
+                      Intent i = new Intent(Intent.ACTION_MAIN);
+                      i.addCategory(c);
+                      i.setClassName(pkg, r.activityInfo.name);
+                      return i;
+                    }
+                  }
+                }
+              }
+              return null;
+            }
             class Bridge {
               @JavascriptInterface
-              public void launch(String p) {
-                Intent i = null;
-                if (p.equals("settings")) i = new Intent(Settings.ACTION_SETTINGS);
-                else {
-                  i = getPackageManager().getLeanbackLaunchIntentForPackage(p);
-                  if (i == null) i = getPackageManager().getLaunchIntentForPackage(p);
-                }
-                if (i != null) { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(i); }
+              public void launch(final String q) {
+                runOnUiThread(new Runnable() { public void run() {
+                  Intent i = null;
+                  PackageManager pm = getPackageManager();
+                  if (q.equals("settings")) i = new Intent(Settings.ACTION_SETTINGS);
+                  else if (q.startsWith("pkg:")) {
+                    String p = q.substring(4);
+                    i = pm.getLeanbackLaunchIntentForPackage(p);
+                    if (i == null) i = pm.getLaunchIntentForPackage(p);
+                  } else if (q.startsWith("name:")) i = byName(q.substring(5));
+                  if (i != null) {
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                  } else Toast.makeText(MainActivity.this, "التطبيق غير موجود", Toast.LENGTH_SHORT).show();
+                }});
               }
             }
             @Override protected void onCreate(Bundle b) {
@@ -91,8 +126,7 @@ jobs:
               WebSettings s = w.getSettings();
               s.setJavaScriptEnabled(true);
               s.setDomStorageEnabled(true);
-              s.setAllowUniversalAccessFromFileURLs(true);
-              w.setBackgroundColor(0xFF2B3A67);
+              w.setBackgroundColor(0xFF111111);
               w.addJavascriptInterface(new Bridge(), "Android");
               setContentView(w);
               w.loadUrl("file:///android_asset/index.html");
@@ -105,55 +139,100 @@ jobs:
           <meta name="viewport" content="width=device-width,initial-scale=1">
           <style>
           *{box-sizing:border-box;margin:0}
-          body{height:100vh;overflow:hidden;font-family:sans-serif;color:#fff;background:linear-gradient(160deg,#2b3a67,#8d6e8f 60%,#d9a066)}
-          .wrap{display:grid;grid-template-columns:1fr 1.2fr 1fr;grid-template-rows:1fr auto;gap:2vw;padding:3vw;height:100vh}
-          .card{background:rgba(255,255,255,.15);border-radius:28px;padding:2vw;border:1px solid rgba(255,255,255,.3);display:flex;flex-direction:column;justify-content:center;text-align:center;gap:1vw}
-          #time{font-size:7vw;font-weight:700}
-          #hadith{font-size:2.6vw;line-height:1.7}
-          #temp{font-size:6vw;font-weight:700}
-          .small{font-size:1.8vw;opacity:.9}
-          .pr{display:flex;justify-content:space-between;font-size:1.7vw;padding:.3vw 1vw;border-radius:12px}
-          .pr.on{background:rgba(255,255,255,.3)}
-          .apps{grid-column:1/4;display:flex;gap:2vw;justify-content:center}
-          button{font-size:2vw;padding:1.2vw 3vw;border-radius:20px;border:2px solid transparent;background:rgba(255,255,255,.2);color:#fff}
+          html,body{height:100%;overflow:hidden;background:#111;color:#fff;font-family:'Noto Naskh Arabic','Noto Sans Arabic',sans-serif}
+          #bg,.shade{position:fixed;left:0;top:0;width:100%;height:100%}
+          .shade{background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.12) 40%,rgba(0,0,0,.6))}
+          .scene{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;transition:opacity 4s}
+          .scene.on{opacity:1}
+          .page{position:fixed;left:0;top:0;width:100%;height:100%;padding:2.5vw 4vw;display:flex;flex-direction:column;justify-content:space-between}
+          .top,.mid,.bot{display:flex;justify-content:space-between}
+          .top{align-items:flex-start}
+          .mid{align-items:center}
+          .bot{align-items:flex-end}
+          .sm{font-size:1.6vw;opacity:.9}
+          .big{font-size:3vw;font-weight:700}
+          #hj{font-size:2.6vw;font-weight:700}
+          #temp{font-size:4.5vw;font-weight:700;line-height:1.1}
+          .wx{text-align:left}
+          #time{font-size:15vw;font-weight:700;line-height:1}
+          #ampm{font-size:3.5vw}
+          .clock{text-align:center}
+          .card{width:36vw;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);border-radius:2vw;padding:2vw}
+          #ayah{font-size:2.5vw;line-height:1.9;margin:1vw 0}
+          .pr{display:flex;gap:1.2vw}
+          .pt{text-align:center;padding:.5vw 1vw;border-radius:1vw;font-size:1.7vw}
+          .pt.on{background:rgba(255,255,255,.3)}
+          .apps{display:flex;gap:1.5vw;justify-content:center}
+          button{font-family:inherit;font-size:2vw;padding:1vw 2.6vw;border-radius:1.6vw;border:2px solid transparent;background:rgba(255,255,255,.2);color:#fff}
           button:focus{border-color:#fff;background:rgba(255,255,255,.45);outline:none}
-          body.idle .apps{display:none}
-          body.idle #time{font-size:11vw}
-          </style></head><body><div class="wrap">
-          <div class="card"><div id="time">--:--</div><div class="small" id="hijri"></div><div class="small" id="greg"></div>
-          <div class="small" id="next"></div><div class="small" id="ram"></div></div>
-          <div class="card"><div class="small">قال رسول الله ﷺ</div><div id="hadith"></div></div>
-          <div class="card"><div class="small">الخفجي</div><div id="temp">--°</div><div class="small" id="hl"></div><div id="list"></div></div>
+          </style></head><body>
+          <div id="bg"></div><div class="shade"></div>
+          <div class="page">
+          <div class="top">
+          <div><div id="hj"></div><div class="sm" id="gr"></div></div>
+          <div class="wx"><div id="temp">--°</div><div class="sm" id="cond"></div><div class="sm" id="hl"></div><div class="sm" id="city"></div></div>
+          </div>
+          <div class="mid">
+          <div class="clock"><div id="time">--:--</div><div id="ampm"></div></div>
+          <div class="card"><div class="sm">آية اليوم</div><div id="ayah"></div><div class="sm" id="sura"></div></div>
+          </div>
+          <div class="bot"><div id="nx"></div><div id="ram"></div><div class="pr" id="list"></div></div>
           <div class="apps">
-          <button onclick="L('com.google.android.youtube.tv')">YouTube</button>
-          <button onclick="L('com.netflix.ninja')">Netflix</button>
+          <button autofocus onclick="L('name:ثمانية|thmanyah')">ثمانية</button>
+          <button onclick="L('name:شاشا|shasha')">شاشا</button>
+          <button onclick="L('pkg:com.android.vending')">Google Play</button>
+          <button onclick="L('pkg:com.google.android.youtube.tv')">YouTube</button>
+          <button onclick="L('pkg:com.netflix.ninja')">Netflix</button>
           <button onclick="L('settings')">الإعدادات</button>
-          </div></div><script>
+          </div></div>
+          <script>
           var $=function(i){return document.getElementById(i)};
+          var LAT=31.33,LON=37.34,CITY='القريات';
           function L(p){if(window.Android)Android.launch(p)}
-          var H=["إنما الأعمال بالنيات","إن الله رفيق يحب الرفق في الأمر كله","من سلك طريقا يلتمس فيه علما سهل الله له به طريقا إلى الجنة","الدين النصيحة","لا يؤمن أحدكم حتى يحب لأخيه ما يحب لنفسه","الكلمة الطيبة صدقة","تبسمك في وجه أخيك صدقة"];
-          $('hadith').textContent=H[Math.floor(Date.now()/864e5)%H.length];
-          var N=[["Fajr","الفجر"],["Dhuhr","الظهر"],["Asr","العصر"],["Maghrib","المغرب"],["Isha","العشاء"]],T=null,nextName="";
-          function at(s,add){var d=new Date();var p=s.split(":");d.setHours(+p[0],+p[1],0,0);d.setDate(d.getDate()+add);return d}
-          function tick(){var d=new Date();
-          $('time').textContent=d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
-          $('greg').textContent=d.toLocaleDateString('ar-SA-u-ca-gregory',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-          $('hijri').textContent=d.toLocaleDateString('ar-SA-u-ca-islamic-umalqura',{day:'numeric',month:'long',year:'numeric'});
-          var r=Math.ceil((new Date(2027,1,8)-d)/864e5);$('ram').textContent=r>0?"رمضان بعد "+r+" يوم":"";
+          var AR='٠١٢٣٤٥٦٧٨٩';function ar(x){return String(x).replace(/\d/g,function(d){return AR[d]})}
+          var P=[['Fajr','الفجر'],['Dhuhr','الظهر'],['Asr','العصر'],['Maghrib','المغرب'],['Isha','العشاء']],T=null,H=null,cur='';
+          var DY=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+          var MN=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+          var AY=[["وَقُل رَّبِّ أَعُوذُ بِكَ مِنْ هَمَزَاتِ الشَّيَاطِينِ","سورة المؤمنون ٩٧"],["أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ","سورة الرعد ٢٨"],["فَإِنَّ مَعَ الْعُسْرِ يُسْرًا","سورة الشرح ٥"],["وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ","سورة الطلاق ٣"],["رَبِّ اشْرَحْ لِي صَدْرِي","سورة طه ٢٥"],["إِنَّ اللَّهَ مَعَ الصَّابِرِينَ","سورة البقرة ١٥٣"],["وَقُل رَّبِّ زِدْنِي عِلْمًا","سورة طه ١١٤"]];
+          var a=AY[Math.floor(Date.now()/864e5)%AY.length];$('ayah').textContent='﴿'+a[0]+'﴾';$('sura').textContent=a[1];$('city').textContent=CITY;
+          function at(s,add){var d=new Date(),p=s.split(':');d.setHours(+p[0],+p[1],0,0);d.setDate(d.getDate()+add);return d}
+          function f12(s){var p=s.slice(0,5).split(':'),h=+p[0];return ar((h%12||12)+':'+p[1])+(h<12?' ص':' م')}
+          function z(x){return(x<10?'0':'')+x}
+          function tick(){var d=new Date(),h=d.getHours(),m=d.getMinutes();
+          $('time').textContent=ar((h%12||12)+':'+z(m));$('ampm').textContent=h<12?'ص':'م';
+          $('gr').textContent=ar(d.getDate())+' '+MN[d.getMonth()]+' '+ar(d.getFullYear());
+          $('hj').textContent=DY[d.getDay()]+(H?'، '+ar(H.day)+' '+H.month.ar+' '+ar(H.year)+' هـ':'');
+          var r=Math.ceil((new Date(2027,1,8)-d)/864e5);
+          $('ram').innerHTML=r>0?'<div class="sm">رمضان ١٤٤٨</div><div class="big">'+ar(r)+' يوم</div>':'';
           if(!T)return;var nx=null;
-          for(var i=0;i<5;i++){var t=at(T[N[i][0]],0);if(t>d){nx=[N[i][1],t];break}}
-          if(!nx)nx=[N[0][1],at(T.Fajr,1)];
-          var s=Math.floor((nx[1]-d)/1000),f=function(x){return(x<10?"0":"")+x};
-          $('next').textContent="الصلاة القادمة: "+nx[0]+" بعد "+f(Math.floor(s/3600))+":"+f(Math.floor(s%3600/60))+":"+f(s%60);
-          if(nextName!=nx[0]){nextName=nx[0];draw()}}
-          function draw(){var h="";for(var i=0;i<5;i++){h+='<div class="pr'+(N[i][1]==nextName?' on':'')+'"><span>'+N[i][1]+'</span><span>'+T[N[i][0]].slice(0,5)+'</span></div>'}$('list').innerHTML=h}
-          function prayer(){fetch('https://api.aladhan.com/v1/timingsByCity?city=Khafji&country=SA&method=4').then(function(r){return r.json()}).then(function(j){T=j.data.timings;nextName="";tick()}).catch(function(){})}
-          function weather(){fetch('https://api.open-meteo.com/v1/forecast?latitude=28.43&longitude=48.49&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min&timezone=auto').then(function(r){return r.json()}).then(function(j){$('temp').textContent=Math.round(j.current.temperature_2m)+"°";$('hl').textContent="↑"+Math.round(j.daily.temperature_2m_max[0])+"° ↓"+Math.round(j.daily.temperature_2m_min[0])+"°"}).catch(function(){})}
-          var idle;function wake(){document.body.classList.remove('idle');clearTimeout(idle);idle=setTimeout(function(){document.body.classList.add('idle')},60000)}
-          document.addEventListener('keydown',wake);document.addEventListener('mousemove',wake);wake();
+          for(var i=0;i<5;i++){var t=at(T[P[i][0]],0);if(t>d){nx=[P[i][1],t];break}}
+          if(!nx)nx=[P[0][1],at(T.Fajr,1)];
+          var s=Math.floor((nx[1]-d)/1000);
+          $('nx').innerHTML='<div class="sm">الصلاة القادمة</div><div class="big">'+nx[0]+'</div><div class="sm">بعد '+ar(z(Math.floor(s/3600))+':'+z(Math.floor(s%3600/60))+':'+z(s%60))+'</div>';
+          if(cur!=nx[0]){cur=nx[0];draw()}}
+          function draw(){var h='';for(var i=0;i<5;i++){h+='<div class="pt'+(P[i][1]==cur?' on':'')+'"><div class="sm">'+P[i][1]+'</div><div>'+f12(T[P[i][0]])+'</div></div>'}$('list').innerHTML=h}
+          function prayer(){fetch('https://api.aladhan.com/v1/timings?latitude='+LAT+'&longitude='+LON+'&method=4').then(function(r){return r.json()}).then(function(j){T=j.data.timings;H=j.data.date.hijri;cur='';tick()}).catch(function(){})}
+          function wc(c){if(c==0)return'صحو';if(c<3)return'غائم جزئياً';if(c==3)return'غائم';if(c==45||c==48)return'ضباب';if(c<60)return'رذاذ';if(c<70)return'مطر';if(c<80)return'ثلج';if(c<90)return'زخات مطر';return'عاصفة رعدية'}
+          function weather(){fetch('https://api.open-meteo.com/v1/forecast?latitude='+LAT+'&longitude='+LON+'&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto').then(function(r){return r.json()}).then(function(j){$('temp').textContent=ar(Math.round(j.current.temperature_2m))+'°';$('cond').textContent=wc(j.current.weather_code);$('hl').textContent='↑'+ar(Math.round(j.daily.temperature_2m_max[0]))+'° ↓'+ar(Math.round(j.daily.temperature_2m_min[0]))+'°'}).catch(function(){})}
+          var SC=[
+          {s:['#f3c892','#dc8f6b','#6b4e7e'],l:[['#c9774f','M0 640 Q250 560 520 630 T1050 600 T1600 640 V900H0Z'],['#a65a40','M0 720 Q350 650 760 720 T1600 700 V900H0Z'],['#6f3b3a','M0 810 Q450 760 900 805 T1600 790 V900H0Z']]},
+          {s:['#c3cde0','#9aa7c4','#6a7798'],l:[['#8c97b6','M0 600 L180 470 L340 560 L560 390 L760 540 L960 430 L1180 560 L1400 450 L1600 560 V900H0Z'],['#6d7a9d','M0 690 L220 560 L420 650 L650 500 L880 650 L1120 540 L1360 660 L1600 590 V900H0Z'],['#4b5678','M0 790 L260 690 L520 770 L800 680 L1080 780 L1340 700 L1600 780 V900H0Z']]},
+          {s:['#0b1230','#1a2552','#34407a'],st:1,l:[['#1b2142','M0 690 L260 560 L520 680 L780 520 L1060 670 L1320 560 L1600 690 V900H0Z'],['#10152e','M0 800 L300 710 L620 790 L940 700 L1280 790 L1600 730 V900H0Z']]},
+          {s:['#d6dfeb','#b3bfd3','#e7b98f'],l:[['#8a6a5c','M0 560 L140 560 L170 430 L420 430 L450 580 L700 580 L730 470 L1000 470 L1030 600 L1300 600 L1330 500 L1600 500 V900H0Z'],['#6b4f48','M0 700 L240 700 L270 600 L560 600 L600 720 L900 720 L940 640 L1260 640 L1300 740 L1600 740 V900H0Z'],['#3e2e33','M0 820 H1600 V900H0Z']]}];
+          function scene(o,i){var g='<defs><linearGradient id="g'+i+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+o.s[0]+'"/><stop offset=".55" stop-color="'+o.s[1]+'"/><stop offset="1" stop-color="'+o.s[2]+'"/></linearGradient></defs><rect width="1600" height="900" fill="url(#g'+i+')"/>';
+          if(o.st){for(var k=0;k<60;k++){g+='<circle cx="'+((k*97)%1600)+'" cy="'+((k*53)%420)+'" r="'+(1+(k%3)*.6)+'" fill="#fff" opacity="'+(.3+(k%4)*.15)+'"/>'}}
+          for(var n=0;n<o.l.length;n++){g+='<path d="'+o.l[n][1]+'" fill="'+o.l[n][0]+'"/>'}
+          return'<svg class="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">'+g+'</svg>'}
+          $('bg').innerHTML=SC.map(scene).join('');
+          var els=$('bg').getElementsByClassName('scene'),si=0;els[0].classList.add('on');
+          setInterval(function(){els[si].classList.remove('on');si=(si+1)%els.length;els[si].classList.add('on')},90000);
           prayer();weather();tick();setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);
           </script></body></html>
           EOF
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
       - run: gradle assembleDebug --no-daemon
       - run: cp app/build/outputs/apk/debug/app-debug.apk shasha.apk
       - uses: softprops/action-gh-release@v2
