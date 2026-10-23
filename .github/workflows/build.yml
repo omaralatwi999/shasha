@@ -187,7 +187,7 @@ jobs:
               WebSettings s = w.getSettings();
               s.setJavaScriptEnabled(true);
               s.setDomStorageEnabled(true);
-              w.setBackgroundColor(0xFF111111);
+              w.setBackgroundColor(0xFF000000);
               w.addJavascriptInterface(new Bridge(), "Android");
               setContentView(w);
               w.loadUrl("file:///android_asset/index.html");
@@ -199,39 +199,150 @@ jobs:
           <!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
           <meta name="viewport" content="width=device-width,initial-scale=1">
           <style>
-          *{box-sizing:border-box;margin:0}
+          *{box-sizing:border-box;margin:0;padding:0}
           html,body{height:100%;overflow:hidden;background:#000;color:#fff;font-family:'Noto Naskh Arabic','Noto Sans Arabic',sans-serif}
-          #bg,.shade{position:fixed;left:0;top:0;width:100%;height:100%;z-index:-1}
-          .shade{background:radial-gradient(circle at center, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.65) 100%);z-index:0}
-          .scene{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;transition:opacity 5s ease-in-out;filter:brightness(0.95)}
-          .scene.on{opacity:1}
-          .page{position:fixed;left:0;top:0;width:100%;height:100%;padding:2.5vw 4vw 3vw;display:flex;flex-direction:column;justify-content:space-between;z-index:1}
+          #bg,.shade{position:fixed;left:0;top:0;width:100%;height:100%;z-index:0}
+          .shade{background:radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.6) 100%);z-index:1}
+          .scene{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;transition:opacity 3s ease-in-out}
+          .scene.on{opacity:1;z-index:1}
+          .page{position:fixed;left:0;top:0;width:100%;height:100%;padding:3vw 4vw 3.5vw;display:flex;flex-direction:column;justify-content:space-between;z-index:2}
           .top,.mid,.bot{display:flex;justify-content:space-between}
           .top{align-items:flex-start}
           .mid{align-items:center}
           .bot{align-items:flex-end}
-          .sm{font-size:1.6vw;opacity:.9}
-          .big{font-size:3vw;font-weight:700}
-          #hj{font-size:2.6vw;font-weight:700}
-          #temp{font-size:4.5vw;font-weight:700;line-height:1.1}
+          .sm{font-size:1.5vw;opacity:0.9}
+          .big{font-size:2.8vw;font-weight:700}
+          #hj{font-size:2.4vw;font-weight:700;text-shadow:0 2px 10px rgba(0,0,0,0.5)}
+          #temp{font-size:4vw;font-weight:700;line-height:1}
           .wx{text-align:left}
-          #time{font-size:13vw;font-weight:700;line-height:1;text-shadow:0 0 40px rgba(0,0,0,0.5)}
-          #ampm{font-size:3.5vw}
+          #time{font-size:12vw;font-weight:700;line-height:0.9;text-shadow:0 10px 30px rgba(0,0,0,0.6)}
+          #ampm{font-size:3vw;margin-top:0.5vw}
           .clock{text-align:center}
-          .card{width:36vw;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:2vw;padding:2vw;backdrop-filter:blur(25px);-webkit-backdrop-filter:blur(25px);box-shadow:0 1.5vw 3.5vw rgba(0,0,0,0.3)}
-          #ayah{font-size:2.5vw;line-height:1.9;margin:1vw 0}
-          .pr{display:flex;gap:1.2vw}
-          .pt{text-align:center;padding:.5vw 1vw;border-radius:1vw;font-size:1.7vw;background:rgba(0,0,0,0.2);backdrop-filter:blur(10px)}
-          .pt.on{background:rgba(255,255,255,0.35);box-shadow:0 0 15px rgba(255,255,255,0.4)}
-          .apps{display:flex;gap:1.8vw;justify-content:center;align-items:center}
-          .t{background:none;border:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:.8vw;color:#fff;font-family:inherit;transition:transform 0.02s linear;cursor:pointer}
-          .ic{width:7.2vw;height:7.2vw;border-radius:1.8vw;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 1vw 2.5vw rgba(0,0,0,0.35),inset 0 1px 1px rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-          .ic img{width:72%;height:72%;object-fit:contain;border-radius:20%}
-          .ic svg{width:55%;height:55%}
-          .ic span{font-size:3.2vw;font-weight:700}
-          .lb{font-size:1.4vw;text-shadow:0 1px 6px rgba(0,0,0,0.7);transition:none}
-          .t:focus{outline:none;transform:scale(1.15);z-index:5}
-          .t:focus .ic{border-color:#fff;background:rgba(255,255,255,0.32);box-shadow:0 0 0 .35vw rgba(255,255,255,0.85),0 1.5vw 3.5vw rgba(0,0,0,0.6)}
-          .t:focus .lb{font-weight:700;text-shadow:0 0 12px rgba(255,255,255,0.9)}
+          .card{width:35vw;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);border-radius:1.8vw;padding:1.8vw;box-shadow:0 1vw 3vw rgba(0,0,0,0.4)}
+          #ayah{font-size:2.2vw;line-height:1.8;margin:0.8vw 0}
+          .pr{display:flex;gap:1vw}
+          .pt{text-align:center;padding:0.6vw 1.1vw;border-radius:1vw;font-size:1.5vw;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1)}
+          .pt.on{background:rgba(255,255,255,0.35);border-color:rgba(255,255,255,0.7);box-shadow:0 0 15px rgba(255,255,255,0.4)}
+          
+          /* تصميم تطبيقات أبل تي في الفخمة والشفافة مع سرعة استجابة فورية */
+          .apps{display:flex;gap:2vw;justify-content:center;align-items:center;padding-top:1vw}
+          .t{background:none;border:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:0.7vw;color:#fff;font-family:inherit;cursor:pointer;outline:none;transition:transform 0.02s linear}
+          .ic{width:6.8vw;height:6.8vw;border-radius:1.7vw;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);box-shadow:0 0.8vw 2vw rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+          .ic svg{width:62%;height:62%}
+          .ic img{width:100%;height:100%;object-fit:cover;border-radius:1.7vw}
+          .lb{font-size:1.3vw;opacity:0.9;text-shadow:0 2px 6px rgba(0,0,0,0.8)}
+          
+          /* التركيز الفوري للريموت بدون أي تعليق */
+          .t:focus{transform:scale(1.15);z-index:5}
+          .t:focus .ic{border-color:#ffffff;background:rgba(255,255,255,0.35);box-shadow:0 0 0 0.4vw #ffffff,0 1.2vw 3vw rgba(0,0,0,0.6)}
+          .t:focus .lb{opacity:1;font-weight:700}
+          
           #adhan{display:none;position:fixed;left:0;top:0;width:100%;height:100%;align-items:center;justify-content:center;pointer-events:none;z-index:10}
-          #
+          #adhan .big{background:rgba(0,0,0,0.85);border:1px solid rgba(255,255,255,0.3);border-radius:2vw;padding:2.5vw 5vw;font-size:3.8vw}
+          </style></head><body>
+          <div id="bg"></div><div class="shade"></div>
+          <div class="page">
+          <div class="top">
+          <div><div id="hj"></div><div class="sm" id="gr"></div></div>
+          <div class="wx"><div id="temp">--°</div><div class="sm" id="cond"></div><div class="sm" id="hl"></div><div class="sm" id="city"></div></div>
+          </div>
+          <div class="mid">
+          <div class="clock"><div id="time">--:--</div><div id="ampm"></div></div>
+          <div class="card"><div class="sm">آية اليوم</div><div id="ayah"></div><div class="sm" id="sura"></div></div>
+          </div>
+          <div class="bot"><div id="nx"></div><div id="ram"></div><div class="pr" id="list"></div></div>
+          <div class="apps" id="apps"></div>
+          </div>
+          <div id="adhan"></div>
+          <script>
+          var $=function(i){return document.getElementById(i)};
+          var LAT=31.33,LON=37.34,CITY='القريات';
+          function L(p){if(window.Android)Android.launch(p)}
+          var AR='٠١٢٣٤٥٦٧٨٩';function ar(x){return String(x).replace(/\d/g,function(d){return AR[d]})}
+          var P=[['Fajr','الفجر'],['Dhuhr','الظهر'],['Asr','العصر'],['Maghrib','المغرب'],['Isha','العشاء']],T=null,H=null,cur='';
+          var DY=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+          var MN=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+          var AY=[["وَقُل رَّبِّ أَعُوذُ بِكَ مِنْ هَمَزَاتِ الشَّيَاطِينِ","سورة المؤمنون ٩٧"],["أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ","سورة الرعد ٢٨"],["فَإِنَّ مَعَ الْعُسْرِ يُسْرًا","سورة الشرح ٥"],["وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ","سورة الطلاق ٣"],["رَبِّ اشْرَحْ لِي صَدْرِي","سورة طه ٢٥"],["إِنَّ اللَّهَ مَعَ الصَّابِرِينَ","سورة البقرة ١٥٣"],["وَقُل رَّبِّ زِدْنِي عِلْمًا","سورة طه ١١٤"]];
+          var a=AY[Math.floor(Date.now()/864e5)%AY.length];$('ayah').textContent='﴿'+a[0]+'﴾';$('sura').textContent=a[1];$('city').textContent=CITY;
+          function at(s,add){var d=new Date(),p=s.split(':');d.setHours(+p[0],+p[1],0,0);d.setDate(d.getDate()+add);return d}
+          function f12(s){var p=s.slice(0,5).split(':'),h=+p[0];return ar((h%12||12)+':'+p[1])+(h<12?' ص':' م')}
+          function z(x){return(x<10?'0':'')+x}
+          function tick(){var d=new Date(),h=d.getHours(),m=d.getMinutes();
+          $('time').textContent=ar((h%12||12)+':'+z(m));$('ampm').textContent=h<12?'ص':'م';
+          $('gr').textContent=ar(d.getDate())+' '+MN[d.getMonth()]+' '+ar(d.getFullYear());
+          $('hj').textContent=DY[d.getDay()]+(H?'، '+ar(H.day)+' '+H.month.ar+' '+ar(H.year)+' هـ':'');
+          var r=Math.ceil((new Date(2027,1,8)-d)/864e5);
+          $('ram').innerHTML=r>0?'<div class="sm">رمضان ١٤٤٨</div><div class="big">'+ar(r)+' يوم</div>':'';
+          if(!T)return;var nx=null,ad=null;
+          for(var k=0;k<5;k++){var tt=at(T[P[k][0]],0);if(d>=tt&&d-tt<12e4)ad=P[k][1]}
+          $('adhan').style.display=ad?'flex':'none';
+          if(ad)$('adhan').innerHTML='<div class="big">حان الآن موعد أذان '+ad+'</div>';
+          for(var i=0;i<5;i++){var t=at(T[P[i][0]],0);if(t>d){nx=[P[i][1],t];break}}
+          if(!nx)nx=[P[0][1],at(T.Fajr,1)];
+          var s=Math.floor((nx[1]-d)/1000);
+          $('nx').innerHTML='<div class="sm">الصلاة القادمة</div><div class="big">'+nx[0]+'</div><div class="sm">بعد '+ar(z(Math.floor(s/3600))+':'+z(Math.floor(s%3600/60))+':'+z(s%60))+'</div>';
+          if(cur!=nx[0]){cur=nx[0];draw()}}
+          function draw(){var h='';for(var i=0;i<5;i++){h+='<div class="pt'+(P[i][1]==cur?' on':'')+'"><div class="sm">'+P[i][1]+'</div><div>'+f12(T[P[i][0]])+'</div></div>'}$('list').innerHTML=h}
+          function prayer(){fetch('https://api.aladhan.com/v1/timings?latitude='+LAT+'&longitude='+LON+'&method=4').then(function(r){return r.json()}).then(function(j){T=j.data.timings;H=j.data.date.hijri;cur='';tick()}).catch(function(){})}
+          function wc(c){if(c==0)return'صحو';if(c<3)return'غائم جزئياً';if(c==3)return'غائم';if(c==45||c==48)return'ضباب';if(c<60)return'رذاذ';if(c<70)return'مطر';if(c<80)return'ثلج';if(c<90)return'زخات مطر';return'عاصفة رعدية'}
+          function weather(){fetch('https://api.open-meteo.com/v1/forecast?latitude='+LAT+'&longitude='+LON+'&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto').then(function(r){return r.json()}).then(function(j){$('temp').textContent=ar(Math.round(j.current.temperature_2m))+'°';$('cond').textContent=wc(j.current.weather_code);$('hl').textContent='↑'+ar(Math.round(j.daily.temperature_2m_max[0]))+'° ↓'+ar(Math.round(j.daily.temperature_2m_min[0]))+'°'}).catch(function(){})}
+          
+          /* خلفيات أبل تي في السينمائية الفخمة مع النجوم وتأثيرات العمق */
+          var SC=[
+          {s:['#0a192f','#172a45','#203a43'],st:1,l:[['#132238','M0 580 Q300 480 650 560 T1300 520 T1600 580 V900H0Z'],['#0d1b2a','M0 700 Q400 620 900 680 T1600 650 V900H0Z']]},
+          {s:['#2c1630','#4a2040','#1f1c2c'],st:1,l:[['#3d1f38','M0 550 Q350 450 750 530 T1500 500 T1600 550 V900H0Z'],['#251322','M0 680 Q450 590 1000 660 T1600 630 V900H0Z']]},
+          {s:['#051937','#004d7a','#008793'],l:[['#04325c','M0 600 Q300 500 700 580 T1400 540 T1600 600 V900H0Z'],['#02223f','M0 720 Q450 630 950 700 T1600 680 V900H0Z']]},
+          {s:['#141E30','#243B55','#0f2027'],st:1,l:[['#1c2d42','M0 570 Q350 470 800 550 T1500 520 T1600 570 V900H0Z'],['#0d1724','M0 690 Q400 600 900 670 T1600 650 V900H0Z']]}];
+
+          function scene(o,i){var g='<defs><linearGradient id="g'+i+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="'+o.s[0]+'"/><stop offset="50%" stop-color="'+o.s[1]+'"/><stop offset="100%" stop-color="'+o.s[2]+'"/></linearGradient></defs><rect width="1600" height="900" fill="url(#g'+i+')"/>';
+          if(o.st){for(var k=0;k<60;k++){g+='<circle cx="'+((k*97)%1600)+'" cy="'+((k*53)%450)+'" r="'+(1+(k%3)*0.6)+'" fill="#ffffff" opacity="'+(0.3+(k%4)*0.15)+'"/>'}}
+          for(var n=0;n<o.l.length;n++){g+='<path d="'+o.l[n][1]+'" fill="'+o.l[n][0]+'" opacity="0.9"/>'}
+          return'<svg class="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">'+g+'</svg>'}
+          
+          $('bg').innerHTML=SC.map(scene).join('');
+          var els=$('bg').getElementsByClassName('scene'),si=0;els[0].classList.add('on');
+          setInterval(function(){els[si].classList.remove('on');si=(si+1)%els.length;els[si].classList.add('on')},12000);
+
+          /* أيقونات التطبيقات والشعارات الأصلية الاحترافية */
+          var ICONS={
+            'youtube':'<svg viewBox="0 0 24 24"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><path fill="#FFF" d="M9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>',
+            'netflix':'<svg viewBox="0 0 24 24"><path fill="#E50914" d="M5.398 0v24l4.133-1.63V11.238L14.602 24H18.6V0h-4.133v12.762L9.398 0H5.398z"/></svg>',
+            'play':'<svg viewBox="0 0 24 24"><path fill="#EA4335" d="M3.609 1.814L13.792 12 3.61 22.186a2.37 2.37 0 0 1-.61-1.602V3.416c0-.623.226-1.196.61-1.602z"/><path fill="#FBBC04" d="M17.556 8.236l-3.764 3.764 3.764 3.764 4.256-2.418a2.38 2.38 0 0 0 0-4.692l-4.256-2.418z"/><path fill="#4285F4" d="M13.792 12l3.764-3.764L4.821.57A2.39 2.39 0 0 0 3.61 1.814L13.792 12z"/><path fill="#34A853" d="M13.792 12L3.609 22.186c.365.372.842.618 1.212.438l12.735-7.228L13.792 12z"/></svg>',
+            'hdmi':'<svg viewBox="0 0 24 24"><path d="M18 6H6C4.9 6 4 6.9 4 8v5c0 1.1.9 2 2 2h1v2h2v-2h6v2h2v-2h1c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 7H6V8h12v5z" fill="#FFF"/><path d="M8 10h8v1.5H8z" fill="#FFF"/></svg>',
+            'gear':'<svg viewBox="0 0 24 24"><path fill="#FFF" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.95s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>'
+          };
+
+          function addTile(label,spec,iconKey){
+          var b=document.createElement('button');b.className='t';b.onclick=function(){L(spec)};
+          var h='<div class="ic">';
+          var u=(iconKey||!window.Android)?'':Android.icon(spec);
+          if(iconKey && ICONS[iconKey]) h+=ICONS[iconKey];
+          else if(u) h+='<img src="'+u+'">';
+          else h+='<span style="font-size:2.8vw;font-weight:700">'+label.charAt(0)+'</span>';
+          b.innerHTML=h+'</div><div class="lb">'+label+'</div>';$('apps').appendChild(b)}
+
+          addTile('ثمانية','name:ثمانية|thmanyah',null);
+          addTile('شاشا','name:شاشا|shasha',null);
+          addTile('Google Play','pkg:com.android.vending','play');
+          addTile('YouTube','pkg:com.google.android.youtube.tv','youtube');
+          addTile('Netflix','pkg:com.netflix.ninja','netflix');
+
+          var ins=window.Android?Android.inputs():'';
+          if(ins){ins.split('\n').forEach(function(l){if(l){var p=l.split('\t');addTile(p[1]||'HDMI','input:'+p[0],'hdmi')}})}else addTile('HDMI','name:تلفزيون مباشر|live tv','hdmi');
+          addTile('الإعدادات','settings','gear');
+
+          try{$('apps').firstChild.focus()}catch(e){}
+          prayer();weather();tick();setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);
+          </script></body></html>
+          EOF
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+      - run: gradle assembleDebug --no-daemon
+      - run: cp app/build/outputs/apk/debug/app-debug.apk shasha.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          files: shasha.apk
+          make_latest: true
