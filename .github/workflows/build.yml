@@ -16,7 +16,8 @@ jobs:
           gradle-version: '8.7'
       - name: Generate project
         run: |
-          mkdir -p app/src/main/java/com/om/shasha app/src/main/assets app/src/main/res/drawable
+          mkdir -p app/src/main/java/com/om/shasha app/src/main/assets app/src/main/res/drawable app/src/main/assets/logos
+          if [ -d logos ]; then cp -r logos/. app/src/main/assets/logos/; fi
           cat > settings.gradle <<'EOF'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositories { google(); mavenCentral() } }
@@ -613,11 +614,11 @@ jobs:
           var HD='<svg viewBox="0 0 24 24"><path d="M3 6.5h18v7.2l-3.2 3.3H15v2H9v-2H6.2L3 13.7z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 10h10M7 12.6h10" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>';
           var GRID='<svg viewBox="0 0 24 24" fill="#fff"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
           var DOCK=[
-            {label:'ثمانية',spec:'name:ثمانية|thmanyah'},
-            {label:'شاشا',spec:'name:شاشا|shasha'},
-            {label:'Google Play',spec:'pkg:com.android.vending'},
-            {label:'YouTube',spec:'pkg:com.google.android.youtube.tv'},
-            {label:'Netflix',spec:'pkg:com.netflix.ninja'},
+            {label:'ثمانية',spec:'name:ثمانية|thmanyah',logo:'thmanyah.png'},
+            {label:'شاشا',spec:'name:شاشا|shasha',logo:'shasha.png'},
+            {label:'Google Play',spec:'pkg:com.android.vending',logo:'googleplay.png'},
+            {label:'YouTube',spec:'pkg:com.google.android.youtube.tv',logo:'youtube.png'},
+            {label:'Netflix',spec:'pkg:com.netflix.ninja',logo:'netflix.png'},
             {label:'HDMI',act:'hdmi',svg:HD},
             {label:'التطبيقات',act:'apps',svg:GRID},
             {label:'الإعدادات',spec:'settings',svg:GEAR}
@@ -640,7 +641,10 @@ jobs:
             if(o.svg){box.innerHTML=o.svg;return}
             var pkg=AND?AND.resolve(o.spec):'';
             b.classList.toggle('off',!!AND&&!pkg);
-            fillIcon(box,pkg,o.label)}
+            fillIcon(box,pkg,o.label);
+            if(o.logo){var im=new Image();im.alt='';
+              im.onload=function(){box.innerHTML='';box.appendChild(im)};
+              im.src='logos/'+o.logo}}
           function buildDock(){
             var dk=$('apps');dk.innerHTML='';
             DOCK.forEach(function(o){
