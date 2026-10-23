@@ -66,36 +66,37 @@ jobs:
           cat > app/src/main/java/com/om/shasha/MainActivity.java <<'EOF'
           package com.om.shasha;
           import android.app.Activity;
+          import android.content.Context;
           import android.content.Intent;
           import android.content.pm.PackageManager;
           import android.content.pm.ResolveInfo;
+          import android.graphics.Bitmap;
+          import android.graphics.Canvas;
+          import android.graphics.drawable.Drawable;
+          import android.media.tv.TvContract;
+          import android.media.tv.TvInputInfo;
+          import android.media.tv.TvInputManager;
           import android.os.Bundle;
           import android.provider.Settings;
+          import android.util.Base64;
           import android.webkit.JavascriptInterface;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.widget.Toast;
-          import java.util.List;
+          import java.io.ByteArrayOutputStream;
           public class MainActivity extends Activity {
-            Intent byName(String q) {
+            ResolveInfo find(String q) {
               PackageManager pm = getPackageManager();
               String[] keys = q.toLowerCase().split("\\|");
               String[] cats = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
               for (String c : cats) {
                 Intent m = new Intent(Intent.ACTION_MAIN);
                 m.addCategory(c);
-                List<ResolveInfo> l = pm.queryIntentActivities(m, 0);
-                for (ResolveInfo r : l) {
-                  String pkg = r.activityInfo.packageName;
-                  if (pkg.equals(getPackageName())) continue;
+                for (ResolveInfo r : pm.queryIntentActivities(m, 0)) {
+                  if (r.activityInfo.packageName.equals(getPackageName())) continue;
                   String label = r.loadLabel(pm).toString().toLowerCase();
                   for (String k : keys) {
-                    if (k.length() > 0 && label.contains(k)) {
-                      Intent i = new Intent(Intent.ACTION_MAIN);
-                      i.addCategory(c);
-                      i.setClassName(pkg, r.activityInfo.name);
-                      return i;
-                    }
+                    if (k.length() > 0 && label.contains(k)) return r;
                   }
                 }
               }
@@ -103,20 +104,64 @@ jobs:
             }
             class Bridge {
               @JavascriptInterface
+              public String icon(String q) {
+                try {
+                  PackageManager pm = getPackageManager();
+                  Drawable d = null;
+                  if (q.startsWith("pkg:")) d = pm.getApplicationIcon(q.substring(4));
+                  else if (q.startsWith("name:")) {
+                    ResolveInfo r = find(q.substring(5));
+                    if (r != null) d = r.loadIcon(pm);
+                  }
+                  if (d == null) return "";
+                  Bitmap bm = Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888);
+                  Canvas c = new Canvas(bm);
+                  d.setBounds(0, 0, 192, 192);
+                  d.draw(c);
+                  ByteArrayOutputStream o = new ByteArrayOutputStream();
+                  bm.compress(Bitmap.CompressFormat.PNG, 100, o);
+                  return "data:image/png;base64," + Base64.encodeToString(o.toByteArray(), Base64.NO_WRAP);
+                } catch (Exception e) { return ""; }
+              }
+              @JavascriptInterface
+              public String inputs() {
+                StringBuilder sb = new StringBuilder();
+                try {
+                  TvInputManager tm = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+                  for (TvInputInfo t : tm.getTvInputList()) {
+                    if (t.getType() == TvInputInfo.TYPE_HDMI) {
+                      sb.append(t.getId()).append("\t").append(t.loadLabel(MainActivity.this)).append("\n");
+                    }
+                  }
+                } catch (Exception e) { }
+                return sb.toString();
+              }
+              @JavascriptInterface
               public void launch(final String q) {
                 runOnUiThread(new Runnable() { public void run() {
-                  Intent i = null;
-                  PackageManager pm = getPackageManager();
-                  if (q.equals("settings")) i = new Intent(Settings.ACTION_SETTINGS);
-                  else if (q.startsWith("pkg:")) {
-                    String p = q.substring(4);
-                    i = pm.getLeanbackLaunchIntentForPackage(p);
-                    if (i == null) i = pm.getLaunchIntentForPackage(p);
-                  } else if (q.startsWith("name:")) i = byName(q.substring(5));
-                  if (i != null) {
-                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(i);
-                  } else Toast.makeText(MainActivity.this, "التطبيق غير موجود", Toast.LENGTH_SHORT).show();
+                  try {
+                    Intent i = null;
+                    PackageManager pm = getPackageManager();
+                    if (q.equals("settings")) i = new Intent(Settings.ACTION_SETTINGS);
+                    else if (q.startsWith("input:")) i = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(q.substring(6)));
+                    else if (q.startsWith("pkg:")) {
+                      String p = q.substring(4);
+                      i = pm.getLeanbackLaunchIntentForPackage(p);
+                      if (i == null) i = pm.getLaunchIntentForPackage(p);
+                    } else if (q.startsWith("name:")) {
+                      ResolveInfo r = find(q.substring(5));
+                      if (r != null) {
+                        i = new Intent(Intent.ACTION_MAIN);
+                        i.setClassName(r.activityInfo.packageName, r.activityInfo.name);
+                      }
+                    }
+                    if (i != null) {
+                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      startActivity(i);
+                    } else Toast.makeText(MainActivity.this, "غير موجود", Toast.LENGTH_SHORT).show();
+                  } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "تعذر الفتح", Toast.LENGTH_SHORT).show();
+                  }
                 }});
               }
             }
@@ -144,7 +189,7 @@ jobs:
           .shade{background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.12) 40%,rgba(0,0,0,.6))}
           .scene{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;transition:opacity 4s}
           .scene.on{opacity:1}
-          .page{position:fixed;left:0;top:0;width:100%;height:100%;padding:2.5vw 4vw;display:flex;flex-direction:column;justify-content:space-between}
+          .page{position:fixed;left:0;top:0;width:100%;height:100%;padding:2.5vw 4vw 3vw;display:flex;flex-direction:column;justify-content:space-between}
           .top,.mid,.bot{display:flex;justify-content:space-between}
           .top{align-items:flex-start}
           .mid{align-items:center}
@@ -154,7 +199,7 @@ jobs:
           #hj{font-size:2.6vw;font-weight:700}
           #temp{font-size:4.5vw;font-weight:700;line-height:1.1}
           .wx{text-align:left}
-          #time{font-size:15vw;font-weight:700;line-height:1}
+          #time{font-size:13vw;font-weight:700;line-height:1}
           #ampm{font-size:3.5vw}
           .clock{text-align:center}
           .card{width:36vw;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);border-radius:2vw;padding:2vw}
@@ -162,9 +207,18 @@ jobs:
           .pr{display:flex;gap:1.2vw}
           .pt{text-align:center;padding:.5vw 1vw;border-radius:1vw;font-size:1.7vw}
           .pt.on{background:rgba(255,255,255,.3)}
-          .apps{display:flex;gap:1.5vw;justify-content:center}
-          button{font-family:inherit;font-size:2vw;padding:1vw 2.6vw;border-radius:1.6vw;border:2px solid transparent;background:rgba(255,255,255,.2);color:#fff}
-          button:focus{border-color:#fff;background:rgba(255,255,255,.45);outline:none}
+          .apps{display:flex;gap:2vw;justify-content:center}
+          .t{background:none;border:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:.7vw;color:#fff;font-family:inherit;transition:transform .2s}
+          .ic{width:7.5vw;height:7.5vw;border-radius:2vw;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 1vw 2.5vw rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;overflow:hidden}
+          .ic img{width:68%;height:68%;border-radius:22%}
+          .ic svg{width:55%;height:55%}
+          .ic span{font-size:3.6vw;font-weight:700}
+          .lb{font-size:1.5vw;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+          .t:focus{outline:none;transform:scale(1.14)}
+          .t:focus .ic{border-color:#fff;box-shadow:0 0 0 .3vw #fff,0 1.2vw 3vw rgba(0,0,0,.4)}
+          .t:focus .lb{font-weight:700}
+          #adhan{display:none;position:fixed;left:0;top:0;width:100%;height:100%;align-items:center;justify-content:center;pointer-events:none}
+          #adhan .big{background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.35);border-radius:2vw;padding:2.5vw 5vw;font-size:4vw}
           </style></head><body>
           <div id="bg"></div><div class="shade"></div>
           <div class="page">
@@ -177,14 +231,9 @@ jobs:
           <div class="card"><div class="sm">آية اليوم</div><div id="ayah"></div><div class="sm" id="sura"></div></div>
           </div>
           <div class="bot"><div id="nx"></div><div id="ram"></div><div class="pr" id="list"></div></div>
-          <div class="apps">
-          <button autofocus onclick="L('name:ثمانية|thmanyah')">ثمانية</button>
-          <button onclick="L('name:شاشا|shasha')">شاشا</button>
-          <button onclick="L('pkg:com.android.vending')">Google Play</button>
-          <button onclick="L('pkg:com.google.android.youtube.tv')">YouTube</button>
-          <button onclick="L('pkg:com.netflix.ninja')">Netflix</button>
-          <button onclick="L('settings')">الإعدادات</button>
-          </div></div>
+          <div class="apps" id="apps"></div>
+          </div>
+          <div id="adhan"></div>
           <script>
           var $=function(i){return document.getElementById(i)};
           var LAT=31.33,LON=37.34,CITY='القريات';
@@ -204,7 +253,10 @@ jobs:
           $('hj').textContent=DY[d.getDay()]+(H?'، '+ar(H.day)+' '+H.month.ar+' '+ar(H.year)+' هـ':'');
           var r=Math.ceil((new Date(2027,1,8)-d)/864e5);
           $('ram').innerHTML=r>0?'<div class="sm">رمضان ١٤٤٨</div><div class="big">'+ar(r)+' يوم</div>':'';
-          if(!T)return;var nx=null;
+          if(!T)return;var nx=null,ad=null;
+          for(var k=0;k<5;k++){var tt=at(T[P[k][0]],0);if(d>=tt&&d-tt<12e4)ad=P[k][1]}
+          $('adhan').style.display=ad?'flex':'none';
+          if(ad)$('adhan').innerHTML='<div class="big">حان الآن موعد أذان '+ad+'</div>';
           for(var i=0;i<5;i++){var t=at(T[P[i][0]],0);if(t>d){nx=[P[i][1],t];break}}
           if(!nx)nx=[P[0][1],at(T.Fajr,1)];
           var s=Math.floor((nx[1]-d)/1000);
@@ -226,6 +278,22 @@ jobs:
           $('bg').innerHTML=SC.map(scene).join('');
           var els=$('bg').getElementsByClassName('scene'),si=0;els[0].classList.add('on');
           setInterval(function(){els[si].classList.remove('on');si=(si+1)%els.length;els[si].classList.add('on')},90000);
+          var GEAR='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="#fff" stroke-width="2.6" stroke-dasharray="3.3 3.3"/></svg>';
+          var HD='<svg viewBox="0 0 24 24"><path d="M3 7h18v7l-3 3h-3v2H9v-2H6l-3-3z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 10.5h10" stroke="#fff" stroke-width="1.8"/></svg>';
+          function addTile(label,spec,svg){
+          var b=document.createElement('button');b.className='t';b.onclick=function(){L(spec)};
+          var u=(svg||!window.Android)?'':Android.icon(spec),h='<div class="ic">';
+          if(svg)h+=svg;else if(u)h+='<img src="'+u+'">';else h+='<span>'+label.charAt(0)+'</span>';
+          b.innerHTML=h+'</div><div class="lb">'+label+'</div>';$('apps').appendChild(b)}
+          addTile('ثمانية','name:ثمانية|thmanyah');
+          addTile('شاشا','name:شاشا|shasha');
+          addTile('Google Play','pkg:com.android.vending');
+          addTile('YouTube','pkg:com.google.android.youtube.tv');
+          addTile('Netflix','pkg:com.netflix.ninja');
+          var ins=window.Android?Android.inputs():'';
+          if(ins){ins.split('\n').forEach(function(l){if(l){var p=l.split('\t');addTile(p[1]||'HDMI','input:'+p[0],HD)}})}else addTile('HDMI','name:تلفزيون مباشر|live tv',HD);
+          addTile('الإعدادات','settings',GEAR);
+          try{$('apps').firstChild.focus()}catch(e){}
           prayer();weather();tick();setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);
           </script></body></html>
           EOF
