@@ -49,7 +49,7 @@ jobs:
               <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent>
               <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
             </queries>
-            <application android:label="شاشة" android:icon="@drawable/banner" android:banner="@drawable/banner" android:usesCleartextTraffic="false">
+            <application android:label="شاشة" android:icon="@drawable/banner" android:banner="@drawable/banner" android:usesCleartextTraffic="false" android:hardwareAccelerated="true">
               <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
                 android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
                 android:screenOrientation="landscape"
@@ -78,7 +78,9 @@ jobs:
           package com.om.shasha;
 
           import android.app.Activity;
+          import android.content.BroadcastReceiver;
           import android.content.Context;
+          import android.content.IntentFilter;
           import android.content.Intent;
           import android.content.pm.PackageManager;
           import android.content.pm.ResolveInfo;
@@ -117,22 +119,40 @@ jobs:
 
           public class MainActivity extends Activity {
             WebView web;
-            final LruCache<String, byte[]> iconCache = new LruCache<String, byte[]>(160);
-
-            /* ---------- البحث عن تطبيق بالاسم ---------- */
-            ResolveInfo find(String q) {
+            final LruCache<String, byte[]> iconCache = new LruCache<String, byte[]>(200);
+‎            /* كاش لقائمة التطبيقات: تُقرأ مرة واحدة وتُحدّث فقط عند تثبيت/حذف تطبيق */
+            volatile List<String[]> appCache = null;   /* {pkg, label, activity, labelLower} */
+            volatile boolean pkgDirty = false;
+            synchronized List<String[]> allApps() {
+              List<String[]> c = appCache;
+              if (c != null) return c;
               PackageManager pm = getPackageManager();
-              String[] keys = q.toLowerCase().split("\\|");
+              Map<String, String[]> found = new HashMap<String, String[]>();
+              List<String> order = new ArrayList<String>();
               String[] cats = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
-              for (String c : cats) {
+              for (String cat : cats) {
                 Intent m = new Intent(Intent.ACTION_MAIN);
-                m.addCategory(c);
+                m.addCategory(cat);
                 for (ResolveInfo r : pm.queryIntentActivities(m, 0)) {
-                  if (r.activityInfo.packageName.equals(getPackageName())) continue;
-                  String label = r.loadLabel(pm).toString().toLowerCase();
-                  for (String k : keys) {
-                    if (k.length() > 0 && label.contains(k)) return r;
-                  }
+                  String p = r.activityInfo.packageName;
+                  if (p.equals(getPackageName()) || found.containsKey(p)) continue;
+                  String lb = r.loadLabel(pm).toString();
+                  found.put(p, new String[]{p, lb, r.activityInfo.name, lb.toLowerCase()});
+                  order.add(p);
+                }
+              }
+              List<String[]> list = new ArrayList<String[]>();
+              for (String p : order) list.add(found.get(p));
+              appCache = list;
+              return list;
+            }
+
+‎            /* ---------- البحث عن تطبيق بالاسم ---------- */
+            String[] find(String q) {
+              String[] keys = q.toLowerCase().split("\\|");
+              for (String[] a : allApps()) {
+                for (String k : keys) {
+                  if (k.length() > 0 && a[3].contains(k)) return a;
                 }
               }
               return null;
@@ -145,14 +165,14 @@ jobs:
               return i;
             }
 
-            /* ---------- رسم أيقونة التطبيق (مربعة بدون قناع) ---------- */
+‎            /* ---------- رسم أيقونة التطبيق (مربعة بدون قناع) ---------- */
             byte[] iconBytes(String pkg) {
               byte[] cached = iconCache.get(pkg);
               if (cached != null) return cached;
               try {
                 PackageManager pm = getPackageManager();
                 Drawable d = pm.getApplicationIcon(pkg);
-                int s = 256;
+                int s = 160;
                 Bitmap bm = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888);
                 Canvas c = new Canvas(bm);
                 if (Build.VERSION.SDK_INT >= 26 && d instanceof AdaptiveIconDrawable) {
@@ -176,9 +196,9 @@ jobs:
               }
             }
 
-            /* ---------- الجسر بين الواجهة وأندرويد ---------- */
+‎            /* ---------- الجسر بين الواجهة وأندرويد ---------- */
             class Bridge {
-              /* يرجّع اسم الحزمة إن كان التطبيق مثبتاً، وإلا نص فارغ */
+‎              /* يرجّع اسم الحزمة إن كان التطبيق مثبتاً، وإلا نص فارغ */
               @JavascriptInterface
               public String resolve(String q) {
                 try {
@@ -187,47 +207,33 @@ jobs:
                     return launchIntentFor(p) != null ? p : "";
                   }
                   if (q.startsWith("name:")) {
-                    ResolveInfo r = find(q.substring(5));
-                    return r != null ? r.activityInfo.packageName : "";
+                    String[] r = find(q.substring(5));
+                    return r != null ? r[0] : "";
                   }
                 } catch (Throwable e) { }
                 return "";
               }
 
-              /* قائمة كل التطبيقات */
+‎              /* قائمة كل التطبيقات */
               @JavascriptInterface
               public String apps() {
                 JSONArray arr = new JSONArray();
                 try {
-                  PackageManager pm = getPackageManager();
-                  Map<String, String> found = new HashMap<String, String>();
-                  String[] cats = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
-                  for (String c : cats) {
-                    Intent m = new Intent(Intent.ACTION_MAIN);
-                    m.addCategory(c);
-                    for (ResolveInfo r : pm.queryIntentActivities(m, 0)) {
-                      String p = r.activityInfo.packageName;
-                      if (p.equals(getPackageName()) || found.containsKey(p)) continue;
-                      found.put(p, r.loadLabel(pm).toString());
-                    }
-                  }
-                  List<Map.Entry<String, String>> list = new ArrayList<Map.Entry<String, String>>(found.entrySet());
-                  Collections.sort(list, new Comparator<Map.Entry<String, String>>() {
-                    public int compare(Map.Entry<String, String> a, Map.Entry<String, String> b) {
-                      return a.getValue().compareToIgnoreCase(b.getValue());
-                    }
+                  List<String[]> list = new ArrayList<String[]>(allApps());
+                  Collections.sort(list, new Comparator<String[]>() {
+                    public int compare(String[] a, String[] b) { return a[1].compareToIgnoreCase(b[1]); }
                   });
-                  for (Map.Entry<String, String> e : list) {
+                  for (String[] e : list) {
                     JSONObject o = new JSONObject();
-                    o.put("pkg", e.getKey());
-                    o.put("label", e.getValue());
+                    o.put("pkg", e[0]);
+                    o.put("label", e[1]);
                     arr.put(o);
                   }
                 } catch (Throwable e) { }
                 return arr.toString();
               }
 
-              /* منافذ HDMI */
+‎              /* منافذ HDMI */
               @JavascriptInterface
               public String inputs() {
                 JSONArray arr = new JSONArray();
@@ -281,15 +287,16 @@ jobs:
                     else if (q.startsWith("input:")) i = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(q.substring(6)));
                     else if (q.startsWith("pkg:")) i = launchIntentFor(q.substring(4));
                     else if (q.startsWith("name:")) {
-                      ResolveInfo r = find(q.substring(5));
+                      String[] r = find(q.substring(5));
                       if (r != null) {
                         i = new Intent(Intent.ACTION_MAIN);
-                        i.setClassName(r.activityInfo.packageName, r.activityInfo.name);
+                        i.setClassName(r[0], r[2]);
                       }
                     }
                     if (i != null) {
                       i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                       startActivity(i);
+                      overridePendingTransition(0, 0);
                     } else Toast.makeText(MainActivity.this, "غير موجود", Toast.LENGTH_SHORT).show();
                   } catch (Throwable e) {
                     Toast.makeText(MainActivity.this, "تعذر الفتح", Toast.LENGTH_SHORT).show();
@@ -319,8 +326,22 @@ jobs:
               s.setDomStorageEnabled(true);
               s.setCacheMode(WebSettings.LOAD_DEFAULT);
               s.setMediaPlaybackRequiresUserGesture(false);
+              if (Build.VERSION.SDK_INT >= 23) s.setOffscreenPreRaster(true);
               web.setBackgroundColor(0xFF0B0F1A);
-              web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+              web.setOverScrollMode(View.OVER_SCROLL_NEVER);
+              web.setVerticalScrollBarEnabled(false);
+              web.setHorizontalScrollBarEnabled(false);
+‎              /* تحديث الكاش فقط عند تثبيت أو حذف تطبيق */
+              IntentFilter pf = new IntentFilter();
+              pf.addAction(Intent.ACTION_PACKAGE_ADDED);
+              pf.addAction(Intent.ACTION_PACKAGE_REMOVED);
+              pf.addAction(Intent.ACTION_PACKAGE_CHANGED);
+              pf.addDataScheme("package");
+              registerReceiver(new BroadcastReceiver() {
+                @Override public void onReceive(Context c, Intent i) {
+                  appCache = null; iconCache.evictAll(); pkgDirty = true;
+                }
+              }, pf);
               web.addJavascriptInterface(new Bridge(), "Android");
               web.setWebViewClient(new WebViewClient() {
                 @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
@@ -328,7 +349,7 @@ jobs:
                   if (u != null && "icons.local".equals(u.getHost())) {
                     Map<String, String> h = new HashMap<String, String>();
                     h.put("Access-Control-Allow-Origin", "*");
-                    h.put("Cache-Control", "no-store");
+                    h.put("Cache-Control", "max-age=86400");
                     String pkg = u.getLastPathSegment();
                     byte[] png = pkg == null ? null : iconBytes(pkg);
                     if (png != null) return new WebResourceResponse("image/png", null, 200, "OK", h, new ByteArrayInputStream(png));
@@ -349,7 +370,7 @@ jobs:
 
             @Override protected void onResume() {
               super.onResume();
-              js("window.refreshDock&&refreshDock()");
+              if (pkgDirty) { pkgDirty = false; js("window.refreshDock&&refreshDock()"); }
             }
 
             @Override protected void onNewIntent(Intent i) {
@@ -388,29 +409,21 @@ jobs:
           html,body{height:100%;overflow:hidden;background:#0b0f1a;color:#fff;font-family:'Noto Sans Arabic','Noto Naskh Arabic','Roboto',sans-serif;-webkit-font-smoothing:antialiased}
           button{font-family:inherit;color:inherit}
 
-          /* ===== الخلفيات (صور حقيقية 4K) ===== */
+‎          /* ===== الخلفيات (صور حقيقية 4K) ===== */
           #bg{position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(120% 120% at 70% 20%,#27406b,#0b0f1a 70%)}
-          .bgl{position:absolute;top:-3%;left:-3%;width:106%;height:106%;background-size:cover;background-position:center;opacity:0;transition:opacity 3s ease-in-out;will-change:opacity,transform}
+          .bgl{position:absolute;top:0;left:0;width:100%;height:100%;background-size:cover;background-position:center;opacity:0;transition:opacity 1.2s ease;transform:translateZ(0)}
           .bgl.on{opacity:1}
-          .bgl.kb0.on{animation:kb0 40s linear forwards}
-          .bgl.kb1.on{animation:kb1 40s linear forwards}
-          @keyframes kb0{from{transform:scale(1) translate(0,0)}to{transform:scale(1.07) translate(-1.2%,-.8%)}}
-          @keyframes kb1{from{transform:scale(1.07) translate(1%,.6%)}to{transform:scale(1) translate(0,0)}}
           .shade{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;background:
            linear-gradient(180deg,rgba(0,0,0,.42) 0,rgba(0,0,0,0) 26%),
            linear-gradient(0deg,rgba(0,0,0,.62) 0,rgba(0,0,0,.18) 34%,rgba(0,0,0,0) 56%)}
-          #pg{position:fixed;left:0;top:0;height:.28vw;width:100%;background:rgba(255,255,255,.55);transform-origin:right center;transform:scaleX(0);z-index:5}
-          #pg.run{animation:pg 30s linear forwards}
-          @keyframes pg{from{transform:scaleX(0)}to{transform:scaleX(1)}}
           #credit{position:fixed;left:1.4vw;bottom:.6vw;font-size:.9vw;opacity:.55;direction:ltr;text-shadow:0 1px 3px rgba(0,0,0,.7)}
 
-          /* ===== زجاج ===== */
-          .glass{background:linear-gradient(145deg,rgba(255,255,255,.27),rgba(255,255,255,.07) 60%,rgba(255,255,255,.12));
-           -webkit-backdrop-filter:blur(22px) saturate(170%);backdrop-filter:blur(22px) saturate(170%);
-           border:1px solid rgba(255,255,255,.34);
-           box-shadow:0 1.2vw 3.6vw rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.6),inset 0 -1px 0 rgba(255,255,255,.14)}
+‎          /* ===== زجاج ===== */
+‎          /* زجاج خفيف: بدون blur (أثقل شيء على معالج التلفاز) */
+          .glass{background:linear-gradient(145deg,rgba(40,48,70,.62),rgba(15,20,34,.55));
+           border:1px solid rgba(255,255,255,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
 
-          /* ===== التخطيط ===== */
+‎          /* ===== التخطيط ===== */
           .page{position:fixed;top:0;left:0;right:0;bottom:0;padding:2.2vw 4vw 2vw;display:flex;flex-direction:column;justify-content:space-between}
           .top,.mid{display:flex;justify-content:space-between}
           .top{align-items:flex-start}
@@ -428,7 +441,7 @@ jobs:
           .card{width:33vw;border-radius:2.2vw;padding:1.8vw 2vw}
           #ayah{font-size:2.3vw;line-height:1.9;margin:.8vw 0;font-family:'Noto Naskh Arabic','Amiri',serif}
 
-          /* شريط الصلاة */
+‎          /* شريط الصلاة */
           .strip{display:flex;align-items:center;justify-content:space-between;border-radius:2.4vw;padding:.9vw 2.2vw;margin:0 auto 1.4vw;width:92vw}
           .pr{display:flex}.pr .pt{margin:0 .4vw}
           .pt{text-align:center;padding:.35vw 1vw;border-radius:1.2vw;font-size:1.55vw;min-width:7vw}
@@ -438,42 +451,41 @@ jobs:
           #ram{text-align:center}
           #ram .big{font-size:2.4vw}
 
-          /* ===== الدوك (أيقونات زجاجية بأسلوب الآيفون) ===== */
+‎          /* ===== الدوك (أيقونات زجاجية بأسلوب الآيفون) ===== */
           .dockwrap{display:flex;justify-content:center;padding-bottom:.4vw}
           .dock{display:flex;align-items:flex-start;padding:1.1vw 1.5vw .8vw;border-radius:3.4vw}
           #apps{outline:none}
-          .t{background:none;border:none;display:flex;flex-direction:column;align-items:center;width:8.2vw;margin:0 .6vw;cursor:pointer;transition:transform .22s cubic-bezier(.2,.9,.3,1.3);outline:none;position:relative}
+          .t{background:none;border:none;display:flex;flex-direction:column;align-items:center;width:8.2vw;margin:0 .6vw;cursor:pointer;transition:transform .12s ease-out;outline:none;position:relative;will-change:transform}
           .ic{position:relative;width:7.2vw;height:7.2vw;border-radius:1.75vw;display:flex;align-items:center;justify-content:center;overflow:hidden;
-           background:linear-gradient(150deg,rgba(255,255,255,.38),rgba(255,255,255,.1) 55%,rgba(255,255,255,.2));
-           border:1px solid rgba(255,255,255,.5);
-           box-shadow:0 .7vw 1.6vw rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.75),inset 0 -.25vw .6vw rgba(255,255,255,.12)}
-          .ic::after{content:"";position:absolute;left:0;right:0;top:0;height:46%;border-radius:1.75vw 1.75vw 60% 60%/1.75vw 1.75vw 30% 30%;background:linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,0));pointer-events:none}
-          .ic img{width:74%;height:74%;border-radius:20%;object-fit:cover;filter:drop-shadow(0 .25vw .5vw rgba(0,0,0,.35))}
-          .ic svg{width:52%;height:52%;filter:drop-shadow(0 .2vw .4vw rgba(0,0,0,.35))}
+           background:linear-gradient(150deg,rgba(255,255,255,.3),rgba(255,255,255,.1));
+           border:.18vw solid rgba(255,255,255,.4)}
+          .ic img{width:74%;height:74%;border-radius:20%;object-fit:cover}
+          .ic svg{width:52%;height:52%}
           .ic .ch{font-size:3.4vw;font-weight:700;text-shadow:0 2px 6px rgba(0,0,0,.4)}
           .lb{margin-top:.55vw;font-size:1.32vw;font-weight:500;text-shadow:0 1px 6px rgba(0,0,0,.75);white-space:nowrap;max-width:8.2vw;overflow:hidden;text-overflow:ellipsis}
-          .t.off .ic{opacity:.45;filter:grayscale(.6)}
-          .t:focus{transform:translateY(-.9vw) scale(1.2);z-index:2}
-          .t:focus .ic{border-color:#fff;box-shadow:0 0 0 .28vw rgba(255,255,255,.95),0 1.3vw 3vw rgba(0,0,0,.5),0 0 3vw rgba(255,255,255,.35),inset 0 1px 0 rgba(255,255,255,.85)}
+          .t.off .ic{opacity:.4}
+          .t:focus{transform:translateY(-.9vw) scale(1.18);z-index:2}
+          .t:focus .ic{border-color:#fff;background:rgba(255,255,255,.42)}
           .t:focus .lb{font-weight:700}
 
-          /* ===== النوافذ المنبثقة (HDMI + التطبيقات + الوقت) ===== */
-          .ov{position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(5,8,18,.45);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
-          .ov.show{display:flex;animation:fi .25s ease-out}
-          @keyframes fi{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+‎          /* ===== النوافذ المنبثقة (HDMI + التطبيقات + الوقت) ===== */
+          .ov{position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(5,8,18,.8)}
+          .ov.show{display:flex;animation:fi .12s ease-out}
+          @keyframes fi{from{opacity:0}to{opacity:1}}
+          .ov .glass{background:rgba(22,28,44,.96)}
           .sheet{border-radius:3vw;padding:2.4vw 3vw;max-width:88vw;max-height:84vh;display:flex;flex-direction:column}
           .sheet h2{font-size:2.6vw;font-weight:700;text-align:center}
           .sheet p{font-size:1.4vw;opacity:.8;text-align:center;margin:.4vw 0 1.8vw}
           .ports{display:flex;flex-wrap:wrap;justify-content:center}
           .pc{width:17vw;border-radius:2vw;padding:1.5vw 1vw 1.2vw;background:linear-gradient(150deg,rgba(255,255,255,.3),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.4);
-           box-shadow:inset 0 1px 0 rgba(255,255,255,.65);display:flex;flex-direction:column;align-items:center;margin:.8vw;cursor:pointer;outline:none;transition:transform .2s cubic-bezier(.2,.9,.3,1.3)}.pc>*{margin-top:.5vw}
+           display:flex;flex-direction:column;align-items:center;margin:.8vw;cursor:pointer;outline:none;transition:transform .12s ease-out}.pc>*{margin-top:.5vw}
           .pc svg{width:5vw;height:5vw}
           .pc .nm{font-size:1.9vw;font-weight:700}
           .pc .dv{font-size:1.2vw;opacity:.8;min-height:1.6vw}
           .pc .st{display:flex;align-items:center;font-size:1.2vw;opacity:.95}
           .pc .dot{margin-left:.5vw;width:.8vw;height:.8vw;border-radius:50%;background:#7a8499}
           .pc.on .dot{background:#46e37e;box-shadow:0 0 .8vw #46e37e}
-          .pc:focus{transform:scale(1.08);border-color:#fff;box-shadow:0 0 0 .26vw #fff,0 1.2vw 3vw rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.8)}
+          .pc:focus{transform:scale(1.08);border-color:#fff;box-shadow:0 0 0 .26vw #fff}
           .hint{font-size:1.2vw;opacity:.65;text-align:center;margin-top:1.6vw}
           .btn{display:inline-block;margin:1vw auto 0;padding:.8vw 2.4vw;border-radius:2vw;font-size:1.6vw;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45);outline:none;cursor:pointer}
           .btn:focus{background:rgba(255,255,255,.4);border-color:#fff;transform:scale(1.06)}
@@ -483,21 +495,21 @@ jobs:
           #grid .t{width:9vw;margin:0 auto}
           #grid .lb{max-width:9vw;font-size:1.2vw}
 
-          /* ضبط الوقت */
+‎          /* ضبط الوقت */
           .tf{display:flex;align-items:center;justify-content:center}
           .tf .btn{margin:0 1vw}
-          .fld{width:9vw;margin:0 .6vw;border-radius:2vw;padding:.9vw .5vw;background:linear-gradient(150deg,rgba(255,255,255,.3),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.4);outline:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;transition:transform .2s}
+          .fld{width:9vw;margin:0 .6vw;border-radius:2vw;padding:.9vw .5vw;background:linear-gradient(150deg,rgba(255,255,255,.3),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.4);outline:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;transition:transform .12s}
           .fld .v{font-size:3.2vw;font-weight:700;line-height:1.3}
           .fld .u{font-size:1.2vw;opacity:.75}
           .fld .a{font-size:1.5vw;opacity:.7}
-          .fld:focus{transform:scale(1.1);border-color:#fff;box-shadow:0 0 0 .26vw #fff,0 1.2vw 3vw rgba(0,0,0,.45)}
+          .fld:focus{transform:scale(1.1);border-color:#fff;box-shadow:0 0 0 .26vw #fff}
 
-          /* الأذان */
+‎          /* الأذان */
           #adhan{display:none;position:fixed;top:0;left:0;right:0;bottom:0;align-items:center;justify-content:center;pointer-events:none;z-index:15}
-          #adhan .big{background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.4);border-radius:2.4vw;padding:2.4vw 5vw;font-size:3.6vw}
+          #adhan .big{background:rgba(0,0,0,.78);border:1px solid rgba(255,255,255,.4);border-radius:2.4vw;padding:2.4vw 5vw;font-size:3.6vw}
           </style></head><body>
           <div id="bg"><div class="bgl" id="bgA"></div><div class="bgl" id="bgB"></div></div>
-          <div class="shade"></div><div id="pg"></div><div id="credit">Photos: Unsplash</div>
+          <div class="shade"></div><div id="credit">Photos: Unsplash</div>
 
           <div class="page">
             <div class="top">
@@ -537,19 +549,19 @@ jobs:
           var $=function(i){return document.getElementById(i)};
           var AND=window.Android||null;
 
-          /* ================== الإعدادات (عدّلها هنا) ================== */
+‎          /* ================== الإعدادات (عدّلها هنا) ================== */
           var LAT=31.33,LON=37.34,CITY='القريات',TZ='Asia/Riyadh';
           var TZOFF=3*36e5;             /* توقيت السعودية UTC+3 (ثابت بدون توقيت صيفي) */
-          var BG_SECONDS=30;            /* مدة كل خلفية */
-          var BG_W=3840,BG_H=2160;      /* دقة 4K */
+          var BG_SECONDS=45;            /* مدة كل خلفية */
+          var BG_W=1920,BG_H=1080;      /* Full HD: أخف ٤ مرات من 4K وبنفس الوضوح على شاشة التلفاز */
           var RAMADAN=new Date(Date.UTC(2027,1,8));
-          /* وقت بناء التطبيق (يُستبدل تلقائياً أثناء البناء) - يُستخدم كحد أدنى للوقت الصحيح */
+‎          /* وقت بناء التطبيق (يُستبدل تلقائياً أثناء البناء) - يُستخدم كحد أدنى للوقت الصحيح */
           var BUILD_TS=Number('__BUILD_TS__')||0;
-          /* صور واقعية عالية الجودة من Unsplash (إن تعطّلت صورة يتم تخطيها تلقائياً) */
+‎          /* صور واقعية عالية الجودة من Unsplash (إن تعطّلت صورة يتم تخطيها تلقائياً) */
           var PHOTO_IDS=['photo-1506744038136-46273834b3fb','photo-1469474968028-56623f02e42e','photo-1441974231531-c6227db76b6e','photo-1507525428034-b723cf961d3e','photo-1470071459604-3b5ec3a7fe05','photo-1464822759023-fed622ff2c3b','photo-1501785888041-af3ef285b470','photo-1472214103451-9374bd1c798e','photo-1500530855697-b586d89ba3ee','photo-1519681393784-d120267933ba','photo-1476514525535-07fb3b4ae5f1','photo-1433086966358-54859d0ed716','photo-1509316785289-025f5b846b35','photo-1473580044384-7ba9967e16a0','photo-1518837695005-2083093ee35b','photo-1505118380757-91f5f5632de0','photo-1419242902214-272b3f66ee7a','photo-1447752875215-b2761acb3c5d','photo-1502082553048-f009c37129b9'];
           var BACKUP_SEEDS=['shasha1','shasha2','shasha3','shasha4','shasha5','shasha6'];
 
-          /* ================== أدوات ================== */
+‎          /* ================== أدوات ================== */
           var AR='٠١٢٣٤٥٦٧٨٩';
           function ar(x){return String(x).replace(/\d/g,function(d){return AR[d]})}
           function z(x){return(x<10?'0':'')+x}
@@ -558,9 +570,9 @@ jobs:
           function sv(k,v){try{localStorage.setItem(k,v)}catch(e){}}
           function ld(k){try{return localStorage.getItem(k)}catch(e){return null}}
 
-          /* ================== الساعة الموثوقة (تعمل بدون إنترنت) ==================
-             التلفزيون لا يملك بطارية ساعة، فبعد الفصل بدون إنترنت يرجع لتاريخ قديم.
-             الحل: نحفظ آخر وقت صحيح، ونستخدم OFF لتصحيح ساعة النظام، ونحسب كل شيء بتوقيت السعودية. */
+‎          /* ================== الساعة الموثوقة (تعمل بدون إنترنت) ==================
+‎             التلفزيون لا يملك بطارية ساعة، فبعد الفصل بدون إنترنت يرجع لتاريخ قديم.
+‎             الحل: نحفظ آخر وقت صحيح، ونستخدم OFF لتصحيح ساعة النظام، ونحسب كل شيء بتوقيت السعودية. */
           var OFF=0,synced=false,manual=false;
           function nowMs(){return Date.now()+OFF}
           function wall(){return new Date(nowMs()+TZOFF)}   /* استخدم getUTC* للقراءة */
@@ -586,7 +598,7 @@ jobs:
               }).catch(next)
             })()}
 
-          /* ================== التاريخ الهجري (حساب محلي) ================== */
+‎          /* ================== التاريخ الهجري (حساب محلي) ================== */
           var HM=['محرم','صفر','ربيع الأول','ربيع الآخر','جمادى الأولى','جمادى الآخرة','رجب','شعبان','رمضان','شوال','ذو القعدة','ذو الحجة'];
           function toHijri(y,m,d){
             var jd=Math.floor(Date.UTC(y,m-1,d)/864e5)+2440588;
@@ -597,7 +609,7 @@ jobs:
             var mo=Math.floor(24*l/709),dd=l-Math.floor(709*mo/24);
             return{day:dd,month:mo,year:30*n+j-30}}
 
-          /* ================== أوقات الصلاة (حساب محلي - أم القرى) ================== */
+‎          /* ================== أوقات الصلاة (حساب محلي - أم القرى) ================== */
           function hm(h){h=((h%24)+24)%24;var m=Math.round(h*60);return z(Math.floor(m/60)%24)+':'+z(m%60)}
           function calcPrayer(d,ram){
             var R=Math.PI/180,jd=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),9)/864e5+2440587.5,n=jd-2451545.0;
@@ -613,10 +625,10 @@ jobs:
             var mag=noon+ang(0.833);
             return{Fajr:hm(noon-ang(18.5)),Dhuhr:hm(noon),Asr:hm(noon+ang(asrA)),Maghrib:hm(mag),Isha:hm(mag+(ram?2:1.5))}}
 
-          /* ================== الخلفيات ================== */
+‎          /* ================== الخلفيات ================== */
           var URLS=[],BK=[],bi=0,bcur=0,bfails=0,bnext=null,btimer=null,bgLayers=[$('bgA'),$('bgB')];
           function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t}return a}
-          URLS=shuffle(PHOTO_IDS.slice()).map(function(id){return'https://images.unsplash.com/'+id+'?auto=format&fit=crop&w='+BG_W+'&h='+BG_H+'&q=80'});
+          URLS=shuffle(PHOTO_IDS.slice()).map(function(id){return'https://images.unsplash.com/'+id+'?auto=format&fit=crop&w='+BG_W+'&h='+BG_H+'&q=72'});
           BK=BACKUP_SEEDS.map(function(s){return'https://picsum.photos/seed/'+s+'/'+BG_W+'/'+BG_H});
           function srcAt(i){return(bfails>=4&&BK.length)?BK[i%BK.length]:URLS[i%URLS.length]}
           function loadImg(src,ok,bad){
@@ -634,24 +646,22 @@ jobs:
             if(!bnext||!bnext.ready){btimer=setTimeout(showBg,1500);return}
             var m=bnext,nx=bgLayers[1-bcur],old=bgLayers[bcur];
             nx.style.backgroundImage='url("'+m.im.src+'")';
-            nx.classList.remove('kb0','kb1');nx.classList.add(bi%2?'kb1':'kb0');
-            void nx.offsetWidth;nx.classList.add('on');old.classList.remove('on');
-            setTimeout(function(){if(!old.classList.contains('on'))old.style.backgroundImage='none'},3500);
+            nx.classList.add('on');old.classList.remove('on');
+            setTimeout(function(){if(!old.classList.contains('on'))old.style.backgroundImage='none'},1600);
             bcur=1-bcur;bi++;bnext=null;
-            var pg=$('pg');pg.classList.remove('run');void pg.offsetWidth;pg.classList.add('run');
             prepareNext();
             btimer=setTimeout(showBg,BG_SECONDS*1000)}
           function startBg(){prepareNext();showBg()}
           window.addEventListener('online',function(){bfails=0;if(bnext&&!bnext.ready)prepareNext();syncTime();prayer();weather()});
 
-          /* ================== بيانات اليوم ================== */
+‎          /* ================== بيانات اليوم ================== */
           var P=[['Fajr','الفجر'],['Dhuhr','الظهر'],['Asr','العصر'],['Maghrib','المغرب'],['Isha','العشاء']],T=null,H=null,cur='',curDay='';
           var DY=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
           var MN=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
           var AY=[["وَقُل رَّبِّ أَعُوذُ بِكَ مِنْ هَمَزَاتِ الشَّيَاطِينِ","سورة المؤمنون ٩٧"],["أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ","سورة الرعد ٢٨"],["فَإِنَّ مَعَ الْعُسْرِ يُسْرًا","سورة الشرح ٥"],["وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ","سورة الطلاق ٣"],["رَبِّ اشْرَحْ لِي صَدْرِي","سورة طه ٢٥"],["إِنَّ اللَّهَ مَعَ الصَّابِرِينَ","سورة البقرة ١٥٣"],["وَقُل رَّبِّ زِدْنِي عِلْمًا","سورة طه ١١٤"]];
           $('city').textContent=CITY;
           function dayKey(d){return d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate()}
-          /* تجهيز بيانات اليوم: من الذاكرة إن كانت لليوم نفسه، وإلا حساب محلي */
+‎          /* تجهيز بيانات اليوم: من الذاكرة إن كانت لليوم نفسه، وإلا حساب محلي */
           function prep(d){
             var k=dayKey(d);
             if(k===curDay)return;
@@ -682,13 +692,16 @@ jobs:
             if(!T)return;
             var nx=null,ad=null;
             for(var k=0;k<5;k++){var tt=at(T[P[k][0]],0);if(d>=tt&&d-tt<12e4)ad=P[k][1]}
-            $('adhan').style.display=ad?'flex':'none';
-            if(ad)$('adhan').innerHTML='<div class="big">حان الآن موعد أذان '+ad+'</div>';
+            if(ad!==lastAd){lastAd=ad;$('adhan').style.display=ad?'flex':'none';
+              if(ad)$('adhan').innerHTML='<div class="big">حان الآن موعد أذان '+ad+'</div>'}
             for(var i=0;i<5;i++){var t=at(T[P[i][0]],0);if(t>d){nx=[P[i][1],t];break}}
             if(!nx)nx=[P[0][1],at(T.Fajr,1)];
             var s=Math.floor((nx[1]-d)/1000);
-            $('nx').innerHTML='<div class="sm">الصلاة القادمة</div><div class="big">'+nx[0]+'</div><div class="sm">بعد '+ar(z(Math.floor(s/3600))+':'+z(Math.floor(s%3600/60))+':'+z(s%60))+'</div>';
+            if(!nxName){$('nx').innerHTML='<div class="sm">الصلاة القادمة</div><div class="big"></div><div class="sm"></div>';nxName=$('nx').children[1].firstChild||$('nx').children[1].appendChild(document.createTextNode(''));nxCnt=$('nx').children[2].appendChild(document.createTextNode(''))}
+            if(nxName.data!==nx[0])nxName.data=nx[0];
+            nxCnt.data='بعد '+ar(z(Math.floor(s/3600))+':'+z(Math.floor(s%3600/60))+':'+z(s%60));
             if(cur!==nx[0]){cur=nx[0];draw()}}
+          var lastAd=0,nxName=null,nxCnt=null;
           function draw(){var h='';for(var i=0;i<5;i++){h+='<div class="pt'+(P[i][1]===cur?' on':'')+'"><div class="sm">'+P[i][1]+'</div><div>'+f12(T[P[i][0]])+'</div></div>'}$('list').innerHTML=h}
           function prayer(){
             fetch('https://api.aladhan.com/v1/timings?latitude='+LAT+'&longitude='+LON+'&method=4&timezonestring='+TZ)
@@ -708,7 +721,7 @@ jobs:
               sv('wx',JSON.stringify(w));showWx(w)}).catch(function(){})}
           try{var w0=JSON.parse(ld('wx')||'null');if(w0)showWx(w0)}catch(e){}
 
-          /* ================== الدوك ================== */
+‎          /* ================== الدوك ================== */
           var GEAR='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 2.8l1.5 2.4 2.8-.6.9 2.7 2.7.9-.6 2.8 2.4 1.5-2.4 1.5.6 2.8-2.7.9-.9 2.7-2.8-.6L12 21.2l-1.5-2.4-2.8.6-.9-2.7-2.7-.9.6-2.8L2.3 12l2.4-1.5-.6-2.8 2.7-.9.9-2.7 2.8.6z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
           var HD='<svg viewBox="0 0 24 24"><path d="M3 6.5h18v7.2l-3.2 3.3H15v2H9v-2H6.2L3 13.7z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 10h10M7 12.6h10" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>';
           var GRID='<svg viewBox="0 0 24 24" fill="#fff"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
@@ -725,10 +738,11 @@ jobs:
             {label:'الإعدادات',spec:'settings',svg:GEAR}
           ];
           var lastTile=null;
-          function iconUrl(pkg){return'https://icons.local/'+encodeURIComponent(pkg)+'?s='+Date.now()}
+          var iconVer=1;
+          function iconUrl(pkg){return'https://icons.local/'+encodeURIComponent(pkg)+'?v='+iconVer}
           function fillIcon(box,pkg,label){
             box.innerHTML='';
-            if(pkg){var im=new Image();im.alt='';
+            if(pkg){var im=new Image();im.alt='';im.decoding='async';
               im.onerror=function(){box.innerHTML='<span class="ch">'+esc(label.charAt(0).toUpperCase())+'</span>'};
               im.src=iconUrl(pkg);box.appendChild(im)}
             else box.innerHTML='<span class="ch">'+esc(label.charAt(0).toUpperCase())+'</span>'}
@@ -742,17 +756,20 @@ jobs:
             if(o.svg){box.innerHTML=o.svg;return}
             var pkg=AND?AND.resolve(o.spec):'';
             b.classList.toggle('off',!!AND&&!pkg);
-            fillIcon(box,pkg,o.label);
-            if(o.logo){var im=new Image();im.alt='';
+            if(o.pkg===pkg&&box.firstChild)return;   /* لم يتغير شيء: لا تعيد التحميل */
+            o.pkg=pkg;
+            if(o.logo){var im=new Image();im.alt='';im.decoding='async';
               im.onload=function(){box.innerHTML='';box.appendChild(im)};
-              im.src='logos/'+o.logo}}
+              im.onerror=function(){fillIcon(box,pkg,o.label)};
+              im.src='logos/'+o.logo}
+            else fillIcon(box,pkg,o.label)}
           function buildDock(){
             var dk=$('apps');dk.innerHTML='';
             DOCK.forEach(function(o){
               var b=mkTile(o,function(){
                 if(o.act==='hdmi')openHdmi();else if(o.act==='apps')openApps();else if(o.act==='time')openTime();else L(o.spec)});
               o.el=b;dk.appendChild(b);setTile(b,o)})}
-          function refreshDock(){DOCK.forEach(function(o){if(o.el)setTile(o.el,o)})}
+          function refreshDock(){iconVer++;appsBuilt=false;DOCK.forEach(function(o){o.pkg=null;if(o.el)setTile(o.el,o)})}
 
           /* ================== HDMI ================== */
           var PORT_SVG='<svg viewBox="0 0 24 24"><path d="M3 6.5h18v7.2l-3.2 3.3H15v2H9v-2H6.2L3 13.7z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 10h10M7 12.6h10" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>';
@@ -769,16 +786,22 @@ jobs:
               box.appendChild(c)});
             showOv('ovHdmi',box.querySelector('.pc.on')||box.querySelector('[data-f]'))}
 
-          /* ================== كل التطبيقات ================== */
-          function openApps(){
+‎          /* ================== كل التطبيقات ================== */
+‎          /* الشبكة تُبنى مرة واحدة فقط ثم تُعاد استخدامها (فتح فوري) */
+          var appsBuilt=false;
+          function buildApps(){
             var list=[];try{list=JSON.parse(AND?AND.apps():'[]')||[]}catch(e){}
-            var g=$('grid');g.innerHTML='';$('appcount').textContent=ar(list.length)+' تطبيق';
+            var g=$('grid'),fr=document.createDocumentFragment();g.innerHTML='';$('appcount').textContent=ar(list.length)+' تطبيق';
             list.forEach(function(p){
               var b=mkTile({label:p.label},function(){closeOv();L('pkg:'+p.pkg)});
-              fillIcon(b.firstChild,p.pkg,p.label);g.appendChild(b)});
+              fillIcon(b.firstChild,p.pkg,p.label);fr.appendChild(b)});
+            g.appendChild(fr);appsBuilt=true}
+          function openApps(){
+            if(!appsBuilt)buildApps();
+            var g=$('grid');g.scrollTop=0;
             showOv('ovApps',g.querySelector('[data-f]'))}
 
-          /* ================== ضبط الوقت يدوياً ================== */
+‎          /* ================== ضبط الوقت يدوياً ================== */
           var TF=null;
           var FL=[['y','السنة',2025,2045],['mo','الشهر',1,12],['d','اليوم',1,31],['h','الساعة',0,23],['mi','الدقيقة',0,59]];
           function dim(y,m){return new Date(Date.UTC(y,m,0)).getUTCDate()}
@@ -804,7 +827,7 @@ jobs:
             var ms=Date.UTC(TF.y,TF.mo-1,TF.d,TF.h,TF.mi,0)-TZOFF;
             OFF=ms-Date.now();manual=true;saveClock();curDay='';closeOv();tick()}
 
-          /* ================== النوافذ + التنقل بالريموت ================== */
+‎          /* ================== النوافذ + التنقل بالريموت ================== */
           var openOvEl=null;
           function showOv(id,focusEl){openOvEl=$(id);openOvEl.classList.add('show');if(focusEl)focusEl.focus()}
           function closeOv(){
@@ -817,10 +840,18 @@ jobs:
           function layerItems(){
             var root=openOvEl||$('apps');
             return[].slice.call(root.querySelectorAll('[data-f]'))}
+          function go(e){e.focus({preventScroll:true});if(openOvEl&&openOvEl.id==='ovApps')e.scrollIntoView({block:'nearest'})}
           function move(dir){
             var els=layerItems();if(!els.length)return;
-            var c=document.activeElement;
-            if(els.indexOf(c)<0){els[0].focus();return}
+            var c=document.activeElement,ix=els.indexOf(c);
+            if(ix<0){els[0].focus();return}
+‎            /* تنقل فوري بالحساب بدل قياس كل العناصر (الواجهة من اليمين لليسار) */
+            var id=openOvEl?openOvEl.id:'dock',cols=id==='ovApps'?7:(id==='dock'||id==='ovTime')?els.length:0;
+            if(cols){
+              var j=ix+(dir==='L'?1:dir==='R'?-1:dir==='D'?cols:-cols);
+              if(j>=0&&j<els.length&&!((dir==='L'||dir==='R')&&Math.floor(j/cols)!==Math.floor(ix/cols)))go(els[j]);
+              else if(dir==='D'&&id==='ovApps'&&Math.floor(ix/cols)<Math.floor((els.length-1)/cols))go(els[els.length-1]);
+              return}
             var r=c.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,best=null,bs=1e9;
             els.forEach(function(e){
               if(e===c)return;
@@ -829,7 +860,7 @@ jobs:
               else if(dir==='U'){main=-dy;cross=Math.abs(dx)}else{main=dy;cross=Math.abs(dx)}
               if(main<=2)return;
               var sc=main+cross*3;if(sc<bs){bs=sc;best=e}});
-            if(best){best.focus();if(best.scrollIntoView)best.scrollIntoView({block:'nearest',inline:'nearest'})}}
+            if(best)best.focus()}
           document.addEventListener('keydown',function(e){
             var k=e.key,c=e.keyCode,d=null;
             if(k==='ArrowLeft'||c===21)d='L';else if(k==='ArrowRight'||c===22)d='R';
@@ -848,13 +879,14 @@ jobs:
               if(document.activeElement===document.body||!document.activeElement){
                 var els=layerItems();if(els.length)els[0].focus()}},50)});
 
-          /* ================== تشغيل ================== */
+‎          /* ================== تشغيل ================== */
           buildDock();
           var f0=$('apps').firstChild;if(f0)f0.focus();
           tick();
           startBg();syncTime();prayer();weather();
           setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);setInterval(syncTime,6e5);
-          setTimeout(refreshDock,4000);
+‎          /* تجهيز شبكة التطبيقات في وقت الفراغ لتفتح فوراً */
+          setTimeout(function(){if(!appsBuilt)buildApps()},3000);
           </script></body></html>
           EOF
           sed -i "s/__BUILD_TS__/$(date +%s)000/" app/src/main/assets/index.html
