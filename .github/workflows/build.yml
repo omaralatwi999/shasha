@@ -1,42 +1,109 @@
-name: build
-on: [push, workflow_dispatch]
+name: Shasha TV - tested build
+on:
+  push:
+  workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
+concurrency:
+  group: shasha-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Generate project
+      - name: Characterize existing calculations before replacement
         run: |
-          mkdir -p app/src/main/java/com/om/shasha app/src/main/assets app/src/main/res/drawable app/src/main/assets/logos
-          if [ -d logos ]; then cp -r logos/. app/src/main/assets/logos/; fi
+          set -euo pipefail
+          mkdir -p shasha-v2/tests
+          cd shasha-v2/tests
+          cat > legacy.cjs <<'EOF'
+          // Extracted from the supplied implementation, unchanged.
+          var AR='Ù Ù¡Ù¢Ù£Ù¤Ù¥Ù¦Ù§Ù¨Ù©';
+          function ar(x){return String(x).replace(/\d/g,function(d){return AR[d]})}
+          function z(x){return(x<10?'0':'')+x}
+          function hm(h){h=((h%24)+24)%24;var m=Math.round(h*60);return z(Math.floor(m/60)%24)+':'+z(m%60)}
+          function f12(s){var p=String(s).slice(0,5).split(':'),h=+p[0];return ar((h%12||12)+':'+p[1])+(h<12?' Øµ':' Ù…')}
+          function dim(y,m){return new Date(Date.UTC(y,m,0)).getUTCDate()}
+          module.exports={ar,z,hm,f12,dim};
+          EOF
+          cat > compatibility.test.cjs <<'EOF'
+          const {test}=require('node:test');
+          const assert=require('node:assert/strict');
+          const C=require(process.env.CORE_PATH||'./legacy.cjs');
+          test('Arabic digits and padding remain compatible',()=>{
+            assert.equal(C.ar('12:05'),'Ù¡Ù¢:Ù Ù¥'); assert.equal(C.z(4),'04');
+          });
+          test('12-hour midnight/noon remain compatible',()=>{
+            assert.equal(C.f12('00:05'),'Ù¡Ù¢:Ù Ù¥ Øµ');
+            assert.equal(C.f12('12:00'),'Ù¡Ù¢:Ù Ù  Ù…');
+            assert.equal(C.f12('23:59'),'Ù¡Ù¡:Ù¥Ù© Ù…');
+          });
+          test('minute rollover and negative hours remain compatible',()=>{
+            assert.equal(C.hm(23.999),'00:00'); assert.equal(C.hm(-1),'23:00');
+          });
+          test('Gregorian leap years remain compatible',()=>{
+            assert.equal(C.dim(2024,2),29); assert.equal(C.dim(2100,2),28);
+          });
+          EOF
+          node --test compatibility.test.cjs
+      - name: Generate isolated Android project
+        run: |
+          set -euo pipefail
+          cd shasha-v2
+          mkdir -p app/src/main/java/com/om/shasha app/src/main/assets/logos app/src/main/res/drawable
+          if [ -d ../logos ]; then cp -r ../logos/. app/src/main/assets/logos/; fi
           cat > settings.gradle <<'EOF'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name='ShashaTV'
           include ':app'
           EOF
           cat > build.gradle <<'EOF'
           plugins { id 'com.android.application' version '8.5.2' apply false }
+          EOF
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
           EOF
           cat > app/build.gradle <<'EOF'
           plugins { id 'com.android.application' }
           android {
             namespace 'com.om.shasha'
             compileSdk 34
-            defaultConfig { applicationId 'com.om.shasha'; minSdk 24; targetSdk 34; versionCode 1; versionName '1.0' }
+            defaultConfig {
+              applicationId 'com.om.shasha'
+              minSdk 24
+              targetSdk 34
+              versionCode __VERSION_CODE__
+              versionName '2.0'
+            }
+            compileOptions {
+              sourceCompatibility JavaVersion.VERSION_17
+              targetCompatibility JavaVersion.VERSION_17
+            }
+            lint { abortOnError true }
           }
+          dependencies { implementation 'androidx.webkit:webkit:1.11.0' }
           EOF
+          sed -i "s/__VERSION_CODE__/$((100000 + ${{ github.run_number }}))/" app/build.gradle
           cat > app/src/main/res/drawable/banner.xml <<'EOF'
           <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-            <gradient android:startColor="#2B3A67" android:endColor="#6B4E7E" android:angle="315"/>
+            <size android:width="320dp" android:height="180dp"/>
+            <solid android:color="#10243A"/>
+            <corners android:radius="16dp"/>
           </shape>
           EOF
           cat > app/src/main/AndroidManifest.xml <<'EOF'
@@ -44,828 +111,664 @@ jobs:
             <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
             <uses-feature android:name="android.software.leanback" android:required="false"/>
             <uses-permission android:name="android.permission.INTERNET"/>
-            <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
             <queries>
               <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent>
               <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
             </queries>
-            <application android:label="شاشة" android:icon="@drawable/banner" android:banner="@drawable/banner" android:usesCleartextTraffic="false">
-              <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
-                android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
-                android:screenOrientation="landscape"
-                android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|screenLayout|smallestScreenSize|density|locale|layoutDirection">
-                <intent-filter>
-                  <action android:name="android.intent.action.MAIN"/>
-                  <category android:name="android.intent.category.LAUNCHER"/>
-                  <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
-                </intent-filter>
-                <intent-filter>
-                  <action android:name="android.intent.action.MAIN"/>
-                  <category android:name="android.intent.category.HOME"/>
-                  <category android:name="android.intent.category.DEFAULT"/>
-                </intent-filter>
+            <application android:label="Ø´Ø§Ø´Ø©" android:icon="@drawable/banner" android:banner="@drawable/banner" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true" android:hardwareAccelerated="true">
+              <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:screenOrientation="landscape" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode">
+                <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
+                <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter>
               </activity>
-              <receiver android:name=".BootReceiver" android:exported="true">
-                <intent-filter>
-                  <action android:name="android.intent.action.BOOT_COMPLETED"/>
-                  <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
-                </intent-filter>
-              </receiver>
             </application>
           </manifest>
           EOF
           cat > app/src/main/java/com/om/shasha/MainActivity.java <<'EOF'
           package com.om.shasha;
 
+          import android.annotation.SuppressLint;
           import android.app.Activity;
-          import android.content.Context;
           import android.content.Intent;
           import android.content.pm.PackageManager;
           import android.content.pm.ResolveInfo;
           import android.graphics.Bitmap;
           import android.graphics.Canvas;
-          import android.graphics.drawable.AdaptiveIconDrawable;
           import android.graphics.drawable.Drawable;
           import android.media.tv.TvContract;
           import android.media.tv.TvInputInfo;
           import android.media.tv.TvInputManager;
           import android.net.Uri;
-          import android.os.Build;
           import android.os.Bundle;
           import android.provider.Settings;
+          import android.util.Log;
           import android.util.LruCache;
           import android.view.View;
-          import android.webkit.JavascriptInterface;
           import android.webkit.WebResourceRequest;
           import android.webkit.WebResourceResponse;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-          import android.widget.Toast;
+          import android.widget.TextView;
+          import androidx.webkit.WebViewAssetLoader;
+          import androidx.webkit.WebViewClientCompat;
+          import androidx.webkit.WebViewCompat;
+          import androidx.webkit.WebViewFeature;
           import java.io.ByteArrayInputStream;
           import java.io.ByteArrayOutputStream;
           import java.util.ArrayList;
           import java.util.Collections;
-          import java.util.Comparator;
           import java.util.HashMap;
-          import java.util.HashSet;
           import java.util.List;
           import java.util.Map;
-          import java.util.Set;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
           import org.json.JSONArray;
           import org.json.JSONObject;
 
-          public class MainActivity extends Activity {
-            WebView web;
-            final LruCache<String, byte[]> iconCache = new LruCache<String, byte[]>(160);
-
-            /* ---------- البحث عن تطبيق بالاسم ---------- */
-            ResolveInfo find(String q) {
-              PackageManager pm = getPackageManager();
-              String[] keys = q.toLowerCase().split("\\|");
-              String[] cats = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
-              for (String c : cats) {
-                Intent m = new Intent(Intent.ACTION_MAIN);
-                m.addCategory(c);
-                for (ResolveInfo r : pm.queryIntentActivities(m, 0)) {
-                  if (r.activityInfo.packageName.equals(getPackageName())) continue;
-                  String label = r.loadLabel(pm).toString().toLowerCase();
-                  for (String k : keys) {
-                    if (k.length() > 0 && label.contains(k)) return r;
-                  }
+          public final class MainActivity extends Activity {
+            private static final String ORIGIN="https://appassets.androidplatform.net";
+            private WebView web;
+            private final ExecutorService worker=Executors.newSingleThreadExecutor();
+            private final LruCache<String,byte[]> icons=new LruCache<String,byte[]>(4*1024*1024){
+              @Override protected int sizeOf(String key,byte[] value){return value.length;}
+            };
+            private WebResourceResponse response(String mime,byte[] bytes,int status){
+              Map<String,String> headers=new HashMap<>();
+              headers.put("Cache-Control","no-cache");
+              headers.put("X-Content-Type-Options","nosniff");
+              return new WebResourceResponse(mime,null,status,status==200?"OK":"Not Found",headers,new ByteArrayInputStream(bytes));
+            }
+            private byte[] icon(String pkg){
+              byte[] cached=icons.get(pkg); if(cached!=null)return cached;
+              Bitmap bitmap=null;
+              try{
+                Drawable drawable=getPackageManager().getApplicationIcon(pkg);
+                bitmap=Bitmap.createBitmap(96,96,Bitmap.Config.ARGB_8888);
+                drawable.setBounds(0,0,96,96);drawable.draw(new Canvas(bitmap));
+                ByteArrayOutputStream out=new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.PNG,100,out);
+                byte[] bytes=out.toByteArray();icons.put(pkg,bytes);return bytes;
+              }catch(Exception error){Log.w("Shasha","Icon unavailable: "+pkg,error);return null;}
+              finally{if(bitmap!=null)bitmap.recycle();}
+            }
+            private Intent launchFor(String pkg){
+              PackageManager pm=getPackageManager();
+              Intent intent=pm.getLeanbackLaunchIntentForPackage(pkg);
+              return intent!=null?intent:pm.getLaunchIntentForPackage(pkg);
+            }
+            private JSONArray apps() throws Exception {
+              PackageManager pm=getPackageManager();Map<String,String> found=new HashMap<>();
+              for(String category:new String[]{Intent.CATEGORY_LEANBACK_LAUNCHER,Intent.CATEGORY_LAUNCHER}){
+                Intent query=new Intent(Intent.ACTION_MAIN).addCategory(category);
+                for(ResolveInfo item:pm.queryIntentActivities(query,0)){
+                  String pkg=item.activityInfo.packageName;
+                  if(!pkg.equals(getPackageName())&&!found.containsKey(pkg))found.put(pkg,String.valueOf(item.loadLabel(pm)));
                 }
               }
-              return null;
+              List<String> keys=new ArrayList<>(found.keySet());
+              Collections.sort(keys,(a,b)->{int n=found.get(a).compareToIgnoreCase(found.get(b));return n!=0?n:a.compareTo(b);});
+              JSONArray array=new JSONArray();
+              for(String pkg:keys)array.put(new JSONObject().put("pkg",pkg).put("label",found.get(pkg)));
+              return array;
             }
-
-            Intent launchIntentFor(String pkg) {
-              PackageManager pm = getPackageManager();
-              Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
-              if (i == null) i = pm.getLaunchIntentForPackage(pkg);
-              return i;
+            private JSONArray inputs() throws Exception {
+              JSONArray array=new JSONArray();TvInputManager manager=(TvInputManager)getSystemService(TV_INPUT_SERVICE);
+              if(manager==null)return array;
+              List<TvInputInfo> list=new ArrayList<>(manager.getTvInputList());
+              Collections.sort(list,(a,b)->a.getId().compareTo(b.getId()));
+              for(TvInputInfo input:list){
+                if(input.getType()!=TvInputInfo.TYPE_HDMI)continue;
+                int state=manager.getInputState(input.getId());
+                array.put(new JSONObject().put("id",input.getId()).put("label",String.valueOf(input.loadLabel(this)))
+                  .put("state",state==TvInputManager.INPUT_STATE_CONNECTED?"Ù…ØªØµÙ„":state==TvInputManager.INPUT_STATE_CONNECTED_STANDBY?"Ø§Ø³ØªØ¹Ø¯Ø§Ø¯":"ØºÙŠØ± Ù…ØªØµÙ„"));
+              }
+              return array;
             }
-
-            /* ---------- رسم أيقونة التطبيق (مربعة بدون قناع) ---------- */
-            byte[] iconBytes(String pkg) {
-              byte[] cached = iconCache.get(pkg);
-              if (cached != null) return cached;
-              try {
-                PackageManager pm = getPackageManager();
-                Drawable d = pm.getApplicationIcon(pkg);
-                int s = 256;
-                Bitmap bm = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888);
-                Canvas c = new Canvas(bm);
-                if (Build.VERSION.SDK_INT >= 26 && d instanceof AdaptiveIconDrawable) {
-                  AdaptiveIconDrawable ad = (AdaptiveIconDrawable) d;
-                  int o = s / 4;
-                  Drawable bg = ad.getBackground();
-                  Drawable fg = ad.getForeground();
-                  if (bg != null) { bg.setBounds(-o, -o, s + o, s + o); bg.draw(c); }
-                  if (fg != null) { fg.setBounds(-o, -o, s + o, s + o); fg.draw(c); }
-                } else {
-                  d.setBounds(0, 0, s, s);
-                  d.draw(c);
+            private void launch(String spec) throws Exception {
+              Intent intent=null;
+              if("settings".equals(spec))intent=new Intent(Settings.ACTION_SETTINGS);
+              else if("date".equals(spec))intent=new Intent(Settings.ACTION_DATE_SETTINGS);
+              else if("home".equals(spec))intent=new Intent(Settings.ACTION_HOME_SETTINGS);
+              else if(spec.startsWith("pkg:"))intent=launchFor(spec.substring(4));
+              else if(spec.startsWith("input:")){
+                String id=spec.substring(6);TvInputManager manager=(TvInputManager)getSystemService(TV_INPUT_SERVICE);
+                if(manager!=null)for(TvInputInfo input:manager.getTvInputList()){
+                  if(input.getId().equals(id)&&input.getType()==TvInputInfo.TYPE_HDMI){intent=new Intent(Intent.ACTION_VIEW,TvContract.buildChannelUriForPassthroughInput(id));break;}
                 }
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                bm.compress(Bitmap.CompressFormat.PNG, 100, out);
-                byte[] b = out.toByteArray();
-                iconCache.put(pkg, b);
-                return b;
-              } catch (Throwable e) {
-                return null;
               }
+              if(intent==null)throw new IllegalArgumentException("ØºÙŠØ± Ù…ØªØ§Ø­ Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²");
+              intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(intent);
             }
-
-            /* ---------- الجسر بين الواجهة وأندرويد ---------- */
-            class Bridge {
-              /* يرجّع اسم الحزمة إن كان التطبيق مثبتاً، وإلا نص فارغ */
-              @JavascriptInterface
-              public String resolve(String q) {
-                try {
-                  if (q.startsWith("pkg:")) {
-                    String p = q.substring(4);
-                    return launchIntentFor(p) != null ? p : "";
-                  }
-                  if (q.startsWith("name:")) {
-                    ResolveInfo r = find(q.substring(5));
-                    return r != null ? r.activityInfo.packageName : "";
-                  }
-                } catch (Throwable e) { }
-                return "";
-              }
-
-              /* قائمة كل التطبيقات */
-              @JavascriptInterface
-              public String apps() {
-                JSONArray arr = new JSONArray();
-                try {
-                  PackageManager pm = getPackageManager();
-                  Map<String, String> found = new HashMap<String, String>();
-                  String[] cats = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
-                  for (String c : cats) {
-                    Intent m = new Intent(Intent.ACTION_MAIN);
-                    m.addCategory(c);
-                    for (ResolveInfo r : pm.queryIntentActivities(m, 0)) {
-                      String p = r.activityInfo.packageName;
-                      if (p.equals(getPackageName()) || found.containsKey(p)) continue;
-                      found.put(p, r.loadLabel(pm).toString());
-                    }
-                  }
-                  List<Map.Entry<String, String>> list = new ArrayList<Map.Entry<String, String>>(found.entrySet());
-                  Collections.sort(list, new Comparator<Map.Entry<String, String>>() {
-                    public int compare(Map.Entry<String, String> a, Map.Entry<String, String> b) {
-                      return a.getValue().compareToIgnoreCase(b.getValue());
-                    }
-                  });
-                  for (Map.Entry<String, String> e : list) {
-                    JSONObject o = new JSONObject();
-                    o.put("pkg", e.getKey());
-                    o.put("label", e.getValue());
-                    arr.put(o);
-                  }
-                } catch (Throwable e) { }
-                return arr.toString();
-              }
-
-              /* منافذ HDMI */
-              @JavascriptInterface
-              public String inputs() {
-                JSONArray arr = new JSONArray();
-                try {
-                  TvInputManager tm = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
-                  List<JSONObject> rows = new ArrayList<JSONObject>();
-                  Set<String> seen = new HashSet<String>();
-                  for (TvInputInfo t : tm.getTvInputList()) {
-                    if (t.getType() != TvInputInfo.TYPE_HDMI) continue;
-                    if (!seen.add(t.getId())) continue;
-                    JSONObject o = new JSONObject();
-                    String label = "";
-                    try { CharSequence cl = t.loadLabel(MainActivity.this); if (cl != null) label = cl.toString(); } catch (Throwable e) { }
-                    int port = 0;
-                    String device = "";
-                    try {
-                      Object h = t.getClass().getMethod("getHdmiDeviceInfo").invoke(t);
-                      if (h != null) {
-                        port = ((Integer) h.getClass().getMethod("getPortId").invoke(h)).intValue();
-                        Object dn = h.getClass().getMethod("getDisplayName").invoke(h);
-                        if (dn != null && dn.toString().length() > 0) device = dn.toString();
-                      }
-                    } catch (Throwable e) { }
-                    if (label.length() == 0) label = "HDMI " + (port > 0 ? port : (rows.size() + 1));
-                    boolean connected = true;
-                    try { connected = tm.getInputState(t.getId()) != TvInputManager.INPUT_STATE_DISCONNECTED; } catch (Throwable e) { }
-                    o.put("id", t.getId());
-                    o.put("label", label);
-                    o.put("device", device);
-                    o.put("port", port);
-                    o.put("connected", connected);
-                    rows.add(o);
-                  }
-                  Collections.sort(rows, new Comparator<JSONObject>() {
-                    public int compare(JSONObject a, JSONObject b) {
-                      int d = a.optInt("port") - b.optInt("port");
-                      return d != 0 ? d : a.optString("label").compareTo(b.optString("label"));
-                    }
-                  });
-                  for (JSONObject o : rows) arr.put(o);
-                } catch (Throwable e) { }
-                return arr.toString();
-              }
-
-              @JavascriptInterface
-              public void launch(final String q) {
-                runOnUiThread(new Runnable() { public void run() {
-                  try {
-                    Intent i = null;
-                    if (q.equals("settings")) i = new Intent(Settings.ACTION_SETTINGS);
-                    else if (q.startsWith("input:")) i = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(q.substring(6)));
-                    else if (q.startsWith("pkg:")) i = launchIntentFor(q.substring(4));
-                    else if (q.startsWith("name:")) {
-                      ResolveInfo r = find(q.substring(5));
-                      if (r != null) {
-                        i = new Intent(Intent.ACTION_MAIN);
-                        i.setClassName(r.activityInfo.packageName, r.activityInfo.name);
-                      }
-                    }
-                    if (i != null) {
-                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                      startActivity(i);
-                    } else Toast.makeText(MainActivity.this, "غير موجود", Toast.LENGTH_SHORT).show();
-                  } catch (Throwable e) {
-                    Toast.makeText(MainActivity.this, "تعذر الفتح", Toast.LENGTH_SHORT).show();
-                  }
-                }});
-              }
+            private String packet(int id,Object data,Exception error){
+              try{return new JSONObject().put("id",id).put("data",data==null?JSONObject.NULL:data).put("error",error==null?JSONObject.NULL:"ØªØ¹Ø°Ø± ØªÙ†ÙÙŠØ° Ø§Ù„Ø·Ù„Ø¨ Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²").toString();}
+              catch(Exception ignored){return "{}";}
             }
-
-            void js(final String code) {
-              runOnUiThread(new Runnable() { public void run() {
-                if (web != null) web.evaluateJavascript(code, null);
-              }});
-            }
-
-            void immersive() {
-              getWindow().getDecorView().setSystemUiVisibility(
-                  View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                  | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                  | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-            }
-
-            @Override protected void onCreate(Bundle b) {
-              super.onCreate(b);
-              web = new WebView(this);
-              WebSettings s = web.getSettings();
-              s.setJavaScriptEnabled(true);
-              s.setDomStorageEnabled(true);
-              s.setCacheMode(WebSettings.LOAD_DEFAULT);
-              s.setMediaPlaybackRequiresUserGesture(false);
-              web.setBackgroundColor(0xFF0B0F1A);
-              web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-              web.addJavascriptInterface(new Bridge(), "Android");
-              web.setWebViewClient(new WebViewClient() {
-                @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
-                  Uri u = r.getUrl();
-                  if (u != null && "icons.local".equals(u.getHost())) {
-                    Map<String, String> h = new HashMap<String, String>();
-                    h.put("Access-Control-Allow-Origin", "*");
-                    h.put("Cache-Control", "no-store");
-                    String pkg = u.getLastPathSegment();
-                    byte[] png = pkg == null ? null : iconBytes(pkg);
-                    if (png != null) return new WebResourceResponse("image/png", null, 200, "OK", h, new ByteArrayInputStream(png));
-                    return new WebResourceResponse("image/png", null, 404, "Not Found", h, new ByteArrayInputStream(new byte[0]));
+          EOF
+          cat >> app/src/main/java/com/om/shasha/MainActivity.java <<'EOF'
+            @SuppressLint("SetJavaScriptEnabled")
+            @Override protected void onCreate(Bundle state){
+              super.onCreate(state);
+              if(!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)){
+                TextView message=new TextView(this);message.setText("ÙŠÙ„Ø²Ù… ØªØ­Ø¯ÙŠØ« Android System WebView Ù„ØªØ´ØºÙŠÙ„ Ø´Ø§Ø´Ø© Ø¨Ø£Ù…Ø§Ù†.");message.setTextSize(24);setContentView(message);return;
+              }
+              web=new WebView(this);WebSettings settings=web.getSettings();
+              settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);
+              settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);
+              settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+              settings.setSupportMultipleWindows(false);web.setBackgroundColor(0xFF0B1320);
+              WebViewAssetLoader loader=new WebViewAssetLoader.Builder().addPathHandler("/assets/",new WebViewAssetLoader.AssetsPathHandler(this)).build();
+              web.setWebViewClient(new WebViewClientCompat(){
+                @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return true;}
+                @Override public boolean shouldOverrideUrlLoading(WebView view,String url){return true;}
+                @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
+                  Uri uri=request.getUrl();String host=uri.getHost(),path=uri.getPath();
+                  if("https".equals(uri.getScheme())&&"appassets.androidplatform.net".equals(host)){
+                    if(path!=null&&path.startsWith("/icons/")){
+                      byte[] data=icon(uri.getLastPathSegment());return response("image/png",data==null?new byte[0]:data,data==null?404:200);
+                    }
+                    WebResourceResponse asset=loader.shouldInterceptRequest(uri);
+                    return asset!=null?asset:response("text/plain",new byte[0],404);
                   }
-                  return null;
+                  if("https".equals(uri.getScheme())&&("api.aladhan.com".equals(host)||"api.open-meteo.com".equals(host)))return null;
+                  return response("text/plain",new byte[0],404);
                 }
               });
-              setContentView(web);
-              web.loadUrl("file:///android_asset/index.html");
-              immersive();
+              WebViewCompat.addWebMessageListener(web,"Native",Collections.singleton(ORIGIN),(view,message,origin,mainFrame,reply)->{
+                if(!mainFrame||!ORIGIN.equals(origin.toString()))return;
+                try{
+                  JSONObject request=new JSONObject(message.getData());int id=request.getInt("id");String method=request.getString("method");
+                  if("launch".equals(method)){
+                    try{launch(request.optString("arg"));reply.postMessage(packet(id,true,null));}
+                    catch(Exception error){Log.w("Shasha","Launch failed",error);reply.postMessage(packet(id,null,error));}
+                  }else{
+                    worker.execute(()->{
+                      Object data=null;Exception failure=null;
+                      try{
+                        if("apps".equals(method))data=apps();else if("inputs".equals(method))data=inputs();
+                        else throw new IllegalArgumentException("Unknown method");
+                      }catch(Exception error){failure=error;Log.w("Shasha","Request failed",error);}
+                      String result=packet(id,data,failure);
+                      runOnUiThread(()->{if(web!=null&&!isFinishing())reply.postMessage(result);});
+                    });
+                  }
+                }catch(Exception error){Log.w("Shasha","Invalid message",error);}
+              });
+              setContentView(web);web.loadUrl(ORIGIN+"/assets/index.html");
             }
-
-            @Override public void onWindowFocusChanged(boolean f) {
-              super.onWindowFocusChanged(f);
-              if (f) immersive();
-            }
-
-            @Override protected void onResume() {
-              super.onResume();
-              js("window.refreshDock&&refreshDock()");
-            }
-
-            @Override protected void onNewIntent(Intent i) {
-              super.onNewIntent(i);
-              js("window.goHome&&goHome()");
-            }
-
-            @Override public void onBackPressed() {
-              js("window.onBackKey&&onBackKey()");
-            }
+            private void js(String code){if(web!=null)web.evaluateJavascript(code,null);}
+            @Override protected void onResume(){super.onResume();if(web!=null){web.onResume();web.resumeTimers();js("window.resumeApp&&window.resumeApp()");}}
+            @Override protected void onPause(){js("window.pauseApp&&window.pauseApp()");if(web!=null){web.onPause();web.pauseTimers();}super.onPause();}
+            @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);js("window.goHome&&window.goHome()");}
+            @Override public void onBackPressed(){js("window.back&&window.back()");}
+            @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);}
+            @Override protected void onDestroy(){worker.shutdownNow();if(web!=null){web.stopLoading();web.destroy();web=null;}icons.evictAll();super.onDestroy();}
           }
           EOF
-          cat > app/src/main/java/com/om/shasha/BootReceiver.java <<'EOF'
-          package com.om.shasha;
-
-          import android.content.BroadcastReceiver;
-          import android.content.Context;
-          import android.content.Intent;
-
-          public class BootReceiver extends BroadcastReceiver {
-            @Override public void onReceive(Context c, Intent i) {
-              try {
-                Intent l = new Intent(c, MainActivity.class);
-                l.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                c.startActivity(l);
-              } catch (Throwable e) { }
-            }
+          cat > app/src/main/assets/core.js <<'EOF'
+          (function(root){
+          'use strict';
+          const AR='Ù Ù¡Ù¢Ù£Ù¤Ù¥Ù¦Ù§Ù¨Ù©',DAY=86400000,OFFSET=10800000;
+          const ar=x=>String(x).replace(/\d/g,d=>AR[d]);
+          const z=x=>(x<10?'0':'')+x;
+          function hm(h){h=((h%24)+24)%24;const m=Math.round(h*60);return z(Math.floor(m/60)%24)+':'+z(m%60);}
+          function f12(s){const p=s.slice(0,5).split(':'),h=+p[0];return ar((h%12||12)+':'+p[1])+(h<12?' Øµ':' Ù…');}
+          const dim=(y,m)=>new Date(Date.UTC(y,m,0)).getUTCDate();
+          const wall=ms=>new Date(ms+OFFSET);
+          const key=ms=>wall(ms).toISOString().slice(0,10);
+          function validTimes(t){return !!t&&['Fajr','Dhuhr','Asr','Maghrib','Isha'].every(k=>typeof t[k]==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t[k]));}
+          function epoch(day,time){return Date.parse(day+'T'+time+':00+03:00');}
+          function nextPrayer(ms,today,tomorrow){
+            if(!validTimes(today)||!validTimes(tomorrow))throw Error('Invalid prayer times');
+            const names=['Fajr','Dhuhr','Asr','Maghrib','Isha'];
+            for(const name of names){const ts=epoch(key(ms),today[name]);if(ts>ms)return {name,ts};}
+            return {name:'Fajr',ts:epoch(key(ms+DAY),tomorrow.Fajr)};
           }
+          const api={ar,z,hm,f12,dim,wall,key,validTimes,epoch,nextPrayer,DAY,OFFSET};
+          if(typeof module!=='undefined')module.exports=api;else root.Core=api;
+          })(typeof window==='undefined'?globalThis:window);
+          EOF
+          cat > app/src/main/assets/prayer.js <<'EOF'
+          (function(root){
+          'use strict';
+          const C=typeof module!=='undefined'?require('./core.js'):root.Core;
+          function calculate(day,ramadan){
+            const R=Math.PI/180,n=Date.parse(day+'T09:00:00Z')/864e5+2440587.5-2451545;
+            const g=(357.529+.98560028*n)%360,q=(280.459+.98564736*n)%360;
+            const L=(q+1.915*Math.sin(g*R)+.020*Math.sin(2*g*R))%360,e=23.439-.00000036*n;
+            let ra=Math.atan2(Math.cos(e*R)*Math.sin(L*R),Math.cos(L*R))/R/15;
+            ra=((ra%24)+24)%24;let eq=q/15-ra;if(eq>12)eq-=24;if(eq< -12)eq+=24;
+            const dec=Math.asin(Math.sin(e*R)*Math.sin(L*R)),lat=31.33*R,noon=15-37.34/15-eq;
+            function angle(a){let c=(-Math.sin(a*R)-Math.sin(dec)*Math.sin(lat))/(Math.cos(dec)*Math.cos(lat));return Math.acos(Math.max(-1,Math.min(1,c)))/R/15;}
+            const asr=-Math.atan(1/(1+Math.tan(Math.abs(lat-dec))))/R,mag=noon+angle(.833);
+            return {Fajr:C.hm(noon-angle(18.5)),Dhuhr:C.hm(noon),Asr:C.hm(noon+angle(asr)),Maghrib:C.hm(mag),Isha:C.hm(mag+(ramadan?2:1.5))};
+          }
+          if(typeof module!=='undefined')module.exports=calculate;else root.calculatePrayer=calculate;
+          })(typeof window==='undefined'?globalThis:window);
           EOF
           cat > app/src/main/assets/index.html <<'EOF'
-          <!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+          <!doctype html>
+          <html lang="ar" dir="rtl"><head><meta charset="utf-8">
           <meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>شاشة</title>
-          <style>
-          *{box-sizing:border-box;margin:0;padding:0}
-          html,body{height:100%;overflow:hidden;background:#0b0f1a;color:#fff;font-family:'Noto Sans Arabic','Noto Naskh Arabic','Roboto',sans-serif;-webkit-font-smoothing:antialiased}
-          button{font-family:inherit;color:inherit}
-
-          /* ===== الخلفيات (صور حقيقية 4K) ===== */
-          #bg{position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(120% 120% at 70% 20%,#27406b,#0b0f1a 70%)}
-          .bgl{position:absolute;top:-3%;left:-3%;width:106%;height:106%;background-size:cover;background-position:center;opacity:0;transition:opacity 3s ease-in-out;will-change:opacity,transform}
-          .bgl.on{opacity:1}
-          .bgl.kb0.on{animation:kb0 40s linear forwards}
-          .bgl.kb1.on{animation:kb1 40s linear forwards}
-          @keyframes kb0{from{transform:scale(1) translate(0,0)}to{transform:scale(1.07) translate(-1.2%,-.8%)}}
-          @keyframes kb1{from{transform:scale(1.07) translate(1%,.6%)}to{transform:scale(1) translate(0,0)}}
-          .shade{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;background:
-           linear-gradient(180deg,rgba(0,0,0,.42) 0,rgba(0,0,0,0) 26%),
-           linear-gradient(0deg,rgba(0,0,0,.62) 0,rgba(0,0,0,.18) 34%,rgba(0,0,0,0) 56%)}
-          #pg{position:fixed;left:0;top:0;height:.28vw;width:100%;background:rgba(255,255,255,.55);transform-origin:right center;transform:scaleX(0);z-index:5}
-          #pg.run{animation:pg 30s linear forwards}
-          @keyframes pg{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-          #credit{position:fixed;left:1.4vw;bottom:.6vw;font-size:.9vw;opacity:.55;direction:ltr;text-shadow:0 1px 3px rgba(0,0,0,.7)}
-
-          /* ===== زجاج ===== */
-          .glass{background:linear-gradient(145deg,rgba(255,255,255,.27),rgba(255,255,255,.07) 60%,rgba(255,255,255,.12));
-           -webkit-backdrop-filter:blur(22px) saturate(170%);backdrop-filter:blur(22px) saturate(170%);
-           border:1px solid rgba(255,255,255,.34);
-           box-shadow:0 1.2vw 3.6vw rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.6),inset 0 -1px 0 rgba(255,255,255,.14)}
-
-          /* ===== التخطيط ===== */
-          .page{position:fixed;top:0;left:0;right:0;bottom:0;padding:2.2vw 4vw 2vw;display:flex;flex-direction:column;justify-content:space-between}
-          .top,.mid{display:flex;justify-content:space-between}
-          .top{align-items:flex-start}
-          .mid{align-items:center}
-          .sm{font-size:1.55vw;opacity:.92;text-shadow:0 1px 8px rgba(0,0,0,.55)}
-          .big{font-size:2.8vw;font-weight:700;text-shadow:0 2px 12px rgba(0,0,0,.5)}
-          #hj{font-size:2.5vw;font-weight:700;text-shadow:0 2px 12px rgba(0,0,0,.55)}
-          #hello{font-size:1.5vw;opacity:.85;margin-top:.3vw;text-shadow:0 1px 8px rgba(0,0,0,.55)}
-          .wx{text-align:left;direction:rtl}
-          #temp{font-size:4.4vw;font-weight:700;line-height:1.1;text-shadow:0 2px 14px rgba(0,0,0,.5)}
-          .clock{text-align:center}
-          #time{font-size:12.5vw;font-weight:700;line-height:1;letter-spacing:-.2vw;text-shadow:0 .4vw 3vw rgba(0,0,0,.5)}
-          #ampm{font-size:3vw;margin-top:-.4vw;text-shadow:0 2px 12px rgba(0,0,0,.5)}
-          #tsrc{font-size:1.25vw;margin-top:.4vw;color:#ffd27a;text-shadow:0 1px 6px rgba(0,0,0,.8)}
-          .card{width:33vw;border-radius:2.2vw;padding:1.8vw 2vw}
-          #ayah{font-size:2.3vw;line-height:1.9;margin:.8vw 0;font-family:'Noto Naskh Arabic','Amiri',serif}
-
-          /* شريط الصلاة */
-          .strip{display:flex;align-items:center;justify-content:space-between;border-radius:2.4vw;padding:.9vw 2.2vw;margin:0 auto 1.4vw;width:92vw}
-          .pr{display:flex}.pr .pt{margin:0 .4vw}
-          .pt{text-align:center;padding:.35vw 1vw;border-radius:1.2vw;font-size:1.55vw;min-width:7vw}
-          .pt .sm{font-size:1.25vw}
-          .pt.on{background:rgba(255,255,255,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.55)}
-          #nx .big{font-size:2.4vw}
-          #ram{text-align:center}
-          #ram .big{font-size:2.4vw}
-
-          /* ===== الدوك (أيقونات زجاجية بأسلوب الآيفون) ===== */
-          .dockwrap{display:flex;justify-content:center;padding-bottom:.4vw}
-          .dock{display:flex;align-items:flex-start;padding:1.1vw 1.5vw .8vw;border-radius:3.4vw}
-          #apps{outline:none}
-          .t{background:none;border:none;display:flex;flex-direction:column;align-items:center;width:8.2vw;margin:0 .6vw;cursor:pointer;transition:transform .22s cubic-bezier(.2,.9,.3,1.3);outline:none;position:relative}
-          .ic{position:relative;width:7.2vw;height:7.2vw;border-radius:1.75vw;display:flex;align-items:center;justify-content:center;overflow:hidden;
-           background:linear-gradient(150deg,rgba(255,255,255,.38),rgba(255,255,255,.1) 55%,rgba(255,255,255,.2));
-           border:1px solid rgba(255,255,255,.5);
-           box-shadow:0 .7vw 1.6vw rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.75),inset 0 -.25vw .6vw rgba(255,255,255,.12)}
-          .ic::after{content:"";position:absolute;left:0;right:0;top:0;height:46%;border-radius:1.75vw 1.75vw 60% 60%/1.75vw 1.75vw 30% 30%;background:linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,0));pointer-events:none}
-          .ic img{width:74%;height:74%;border-radius:20%;object-fit:cover;filter:drop-shadow(0 .25vw .5vw rgba(0,0,0,.35))}
-          .ic svg{width:52%;height:52%;filter:drop-shadow(0 .2vw .4vw rgba(0,0,0,.35))}
-          .ic .ch{font-size:3.4vw;font-weight:700;text-shadow:0 2px 6px rgba(0,0,0,.4)}
-          .lb{margin-top:.55vw;font-size:1.32vw;font-weight:500;text-shadow:0 1px 6px rgba(0,0,0,.75);white-space:nowrap;max-width:8.2vw;overflow:hidden;text-overflow:ellipsis}
-          .t.off .ic{opacity:.45;filter:grayscale(.6)}
-          .t:focus{transform:translateY(-.9vw) scale(1.2);z-index:2}
-          .t:focus .ic{border-color:#fff;box-shadow:0 0 0 .28vw rgba(255,255,255,.95),0 1.3vw 3vw rgba(0,0,0,.5),0 0 3vw rgba(255,255,255,.35),inset 0 1px 0 rgba(255,255,255,.85)}
-          .t:focus .lb{font-weight:700}
-
-          /* ===== النوافذ المنبثقة (HDMI + التطبيقات + الوقت) ===== */
-          .ov{position:fixed;top:0;left:0;right:0;bottom:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(5,8,18,.45);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
-          .ov.show{display:flex;animation:fi .25s ease-out}
-          @keyframes fi{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
-          .sheet{border-radius:3vw;padding:2.4vw 3vw;max-width:88vw;max-height:84vh;display:flex;flex-direction:column}
-          .sheet h2{font-size:2.6vw;font-weight:700;text-align:center}
-          .sheet p{font-size:1.4vw;opacity:.8;text-align:center;margin:.4vw 0 1.8vw}
-          .ports{display:flex;flex-wrap:wrap;justify-content:center}
-          .pc{width:17vw;border-radius:2vw;padding:1.5vw 1vw 1.2vw;background:linear-gradient(150deg,rgba(255,255,255,.3),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.4);
-           box-shadow:inset 0 1px 0 rgba(255,255,255,.65);display:flex;flex-direction:column;align-items:center;margin:.8vw;cursor:pointer;outline:none;transition:transform .2s cubic-bezier(.2,.9,.3,1.3)}.pc>*{margin-top:.5vw}
-          .pc svg{width:5vw;height:5vw}
-          .pc .nm{font-size:1.9vw;font-weight:700}
-          .pc .dv{font-size:1.2vw;opacity:.8;min-height:1.6vw}
-          .pc .st{display:flex;align-items:center;font-size:1.2vw;opacity:.95}
-          .pc .dot{margin-left:.5vw;width:.8vw;height:.8vw;border-radius:50%;background:#7a8499}
-          .pc.on .dot{background:#46e37e;box-shadow:0 0 .8vw #46e37e}
-          .pc:focus{transform:scale(1.08);border-color:#fff;box-shadow:0 0 0 .26vw #fff,0 1.2vw 3vw rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.8)}
-          .hint{font-size:1.2vw;opacity:.65;text-align:center;margin-top:1.6vw}
-          .btn{display:inline-block;margin:1vw auto 0;padding:.8vw 2.4vw;border-radius:2vw;font-size:1.6vw;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45);outline:none;cursor:pointer}
-          .btn:focus{background:rgba(255,255,255,.4);border-color:#fff;transform:scale(1.06)}
-          #grid{display:grid;grid-template-columns:repeat(7,1fr);grid-gap:1.2vw .6vw;overflow-y:auto;padding:2vw .6vw 1.6vw;max-height:64vh;scrollbar-width:none}
-          #grid::-webkit-scrollbar{display:none}
-          #grid .ic{width:6.2vw;height:6.2vw;border-radius:1.5vw}
-          #grid .t{width:9vw;margin:0 auto}
-          #grid .lb{max-width:9vw;font-size:1.2vw}
-
-          /* ضبط الوقت */
-          .tf{display:flex;align-items:center;justify-content:center}
-          .tf .btn{margin:0 1vw}
-          .fld{width:9vw;margin:0 .6vw;border-radius:2vw;padding:.9vw .5vw;background:linear-gradient(150deg,rgba(255,255,255,.3),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.4);outline:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;transition:transform .2s}
-          .fld .v{font-size:3.2vw;font-weight:700;line-height:1.3}
-          .fld .u{font-size:1.2vw;opacity:.75}
-          .fld .a{font-size:1.5vw;opacity:.7}
-          .fld:focus{transform:scale(1.1);border-color:#fff;box-shadow:0 0 0 .26vw #fff,0 1.2vw 3vw rgba(0,0,0,.45)}
-
-          /* الأذان */
-          #adhan{display:none;position:fixed;top:0;left:0;right:0;bottom:0;align-items:center;justify-content:center;pointer-events:none;z-index:15}
-          #adhan .big{background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.4);border-radius:2.4vw;padding:2.4vw 5vw;font-size:3.6vw}
-          </style></head><body>
-          <div id="bg"><div class="bgl" id="bgA"></div><div class="bgl" id="bgB"></div></div>
-          <div class="shade"></div><div id="pg"></div><div id="credit">Photos: Unsplash</div>
-
-          <div class="page">
-            <div class="top">
-              <div><div id="hj"></div><div class="sm" id="gr"></div><div id="hello"></div></div>
-              <div class="wx"><div id="temp">--°</div><div class="sm" id="cond"></div><div class="sm" id="hl"></div><div class="sm" id="city"></div></div>
-            </div>
-            <div class="mid">
-              <div class="clock"><div id="time">--:--</div><div id="ampm"></div><div id="tsrc"></div></div>
-              <div class="card glass"><div class="sm">آية اليوم</div><div id="ayah"></div><div class="sm" id="sura"></div></div>
-            </div>
-            <div>
-              <div class="strip glass"><div id="nx"></div><div class="pr" id="list"></div><div id="ram"></div></div>
-              <div class="dockwrap"><div class="dock glass" id="apps"></div></div>
-            </div>
-          </div>
-
-          <div id="adhan"></div>
-
-          <div class="ov" id="ovHdmi"><div class="sheet glass">
-            <h2>مصادر HDMI</h2><p>اختر المنفذ الذي تريد التبديل إليه</p>
-            <div class="ports" id="ports"></div>
-            <div class="hint">زر الرجوع للإغلاق</div>
-          </div></div>
-
-          <div class="ov" id="ovApps"><div class="sheet glass">
-            <h2>كل التطبيقات</h2><p id="appcount"></p>
-            <div id="grid"></div>
-          </div></div>
-
-          <div class="ov" id="ovTime"><div class="sheet glass">
-            <h2>ضبط التاريخ والوقت</h2><p>يمين / يسار للتنقل، أعلى / أسفل لتغيير القيمة، ثم اضغط حفظ (التوقيت: السعودية)</p>
-            <div class="tf" id="tfields"></div>
-            <div class="hint">زر الرجوع للإغلاق</div>
-          </div></div>
-
-          <script>
-          var $=function(i){return document.getElementById(i)};
-          var AND=window.Android||null;
-
-          /* ================== الإعدادات (عدّلها هنا) ================== */
-          var LAT=31.33,LON=37.34,CITY='القريات',TZ='Asia/Riyadh';
-          var TZOFF=3*36e5;             /* توقيت السعودية UTC+3 (ثابت بدون توقيت صيفي) */
-          var BG_SECONDS=30;            /* مدة كل خلفية */
-          var BG_W=3840,BG_H=2160;      /* دقة 4K */
-          var RAMADAN=new Date(Date.UTC(2027,1,8));
-          /* وقت بناء التطبيق (يُستبدل تلقائياً أثناء البناء) - يُستخدم كحد أدنى للوقت الصحيح */
-          var BUILD_TS=Number('__BUILD_TS__')||0;
-          /* صور واقعية عالية الجودة من Unsplash (إن تعطّلت صورة يتم تخطيها تلقائياً) */
-          var PHOTO_IDS=['photo-1506744038136-46273834b3fb','photo-1469474968028-56623f02e42e','photo-1441974231531-c6227db76b6e','photo-1507525428034-b723cf961d3e','photo-1470071459604-3b5ec3a7fe05','photo-1464822759023-fed622ff2c3b','photo-1501785888041-af3ef285b470','photo-1472214103451-9374bd1c798e','photo-1500530855697-b586d89ba3ee','photo-1519681393784-d120267933ba','photo-1476514525535-07fb3b4ae5f1','photo-1433086966358-54859d0ed716','photo-1509316785289-025f5b846b35','photo-1473580044384-7ba9967e16a0','photo-1518837695005-2083093ee35b','photo-1505118380757-91f5f5632de0','photo-1419242902214-272b3f66ee7a','photo-1447752875215-b2761acb3c5d','photo-1502082553048-f009c37129b9'];
-          var BACKUP_SEEDS=['shasha1','shasha2','shasha3','shasha4','shasha5','shasha6'];
-
-          /* ================== أدوات ================== */
-          var AR='٠١٢٣٤٥٦٧٨٩';
-          function ar(x){return String(x).replace(/\d/g,function(d){return AR[d]})}
-          function z(x){return(x<10?'0':'')+x}
-          function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
-          function L(spec){if(AND)AND.launch(spec)}
-          function sv(k,v){try{localStorage.setItem(k,v)}catch(e){}}
-          function ld(k){try{return localStorage.getItem(k)}catch(e){return null}}
-
-          /* ================== الساعة الموثوقة (تعمل بدون إنترنت) ==================
-             التلفزيون لا يملك بطارية ساعة، فبعد الفصل بدون إنترنت يرجع لتاريخ قديم.
-             الحل: نحفظ آخر وقت صحيح، ونستخدم OFF لتصحيح ساعة النظام، ونحسب كل شيء بتوقيت السعودية. */
-          var OFF=0,synced=false,manual=false;
-          function nowMs(){return Date.now()+OFF}
-          function wall(){return new Date(nowMs()+TZOFF)}   /* استخدم getUTC* للقراءة */
-          function saveClock(){sv('lastTrue',String(nowMs()))}
-          (function(){
-            var floor=Math.max(BUILD_TS,+ld('lastTrue')||0),sys=Date.now();
-            OFF=sys<floor?floor-sys:0;   /* إن كانت ساعة النظام أقدم من آخر وقت معروف فهي خاطئة */
-          })();
-          var TS=[
-            function(){return fetch('https://worldtimeapi.org/api/timezone/Etc/UTC').then(function(r){return r.json()}).then(function(j){return j.unixtime*1000})},
-            function(){return fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC').then(function(r){return r.json()}).then(function(j){return Date.parse(String(j.dateTime).slice(0,19)+'Z')})},
-            function(){return fetch('https://www.cloudflare.com/cdn-cgi/trace').then(function(r){return r.text()}).then(function(t){return parseFloat(/ts=([\d.]+)/.exec(t)[1])*1000})}
-          ];
-          function syncTime(){
-            var i=0;
-            (function next(){
-              if(i>=TS.length)return;
-              var t0=performance.now();
-              TS[i++]().then(function(ms){
-                if(!(ms>BUILD_TS))throw 0;
-                OFF=ms+(performance.now()-t0)/2-Date.now();
-                synced=true;saveClock();curDay='';tick()
-              }).catch(next)
-            })()}
-
-          /* ================== التاريخ الهجري (حساب محلي) ================== */
-          var HM=['محرم','صفر','ربيع الأول','ربيع الآخر','جمادى الأولى','جمادى الآخرة','رجب','شعبان','رمضان','شوال','ذو القعدة','ذو الحجة'];
-          function toHijri(y,m,d){
-            var jd=Math.floor(Date.UTC(y,m-1,d)/864e5)+2440588;
-            var l=jd-1948440+10632,n=Math.floor((l-1)/10631);
-            l=l-10631*n+354;
-            var j=Math.floor((10985-l)/5316)*Math.floor(50*l/17719)+Math.floor(l/5670)*Math.floor(43*l/15238);
-            l=l-Math.floor((30-j)/15)*Math.floor(17719*j/50)-Math.floor(j/16)*Math.floor(15238*j/43)+29;
-            var mo=Math.floor(24*l/709),dd=l-Math.floor(709*mo/24);
-            return{day:dd,month:mo,year:30*n+j-30}}
-
-          /* ================== أوقات الصلاة (حساب محلي - أم القرى) ================== */
-          function hm(h){h=((h%24)+24)%24;var m=Math.round(h*60);return z(Math.floor(m/60)%24)+':'+z(m%60)}
-          function calcPrayer(d,ram){
-            var R=Math.PI/180,jd=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),9)/864e5+2440587.5,n=jd-2451545.0;
-            var g=(357.529+0.98560028*n)%360,q=(280.459+0.98564736*n)%360;
-            var Ls=(q+1.915*Math.sin(g*R)+0.020*Math.sin(2*g*R))%360,e=23.439-0.00000036*n;
-            var RA=Math.atan2(Math.cos(e*R)*Math.sin(Ls*R),Math.cos(Ls*R))/R/15;
-            RA=((RA%24)+24)%24;
-            var eqt=q/15-RA;if(eqt>12)eqt-=24;if(eqt<-12)eqt+=24;
-            var decl=Math.asin(Math.sin(e*R)*Math.sin(Ls*R)),lat=LAT*R;
-            var noon=12+3-LON/15-eqt;
-            function ang(a){var c=(-Math.sin(a*R)-Math.sin(decl)*Math.sin(lat))/(Math.cos(decl)*Math.cos(lat));c=Math.max(-1,Math.min(1,c));return Math.acos(c)/R/15}
-            var asrA=-Math.atan(1/(1+Math.tan(Math.abs(lat-decl))))/R;
-            var mag=noon+ang(0.833);
-            return{Fajr:hm(noon-ang(18.5)),Dhuhr:hm(noon),Asr:hm(noon+ang(asrA)),Maghrib:hm(mag),Isha:hm(mag+(ram?2:1.5))}}
-
-          /* ================== الخلفيات ================== */
-          var URLS=[],BK=[],bi=0,bcur=0,bfails=0,bnext=null,btimer=null,bgLayers=[$('bgA'),$('bgB')];
-          function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t}return a}
-          URLS=shuffle(PHOTO_IDS.slice()).map(function(id){return'https://images.unsplash.com/'+id+'?auto=format&fit=crop&w='+BG_W+'&h='+BG_H+'&q=80'});
-          BK=BACKUP_SEEDS.map(function(s){return'https://picsum.photos/seed/'+s+'/'+BG_W+'/'+BG_H});
-          function srcAt(i){return(bfails>=4&&BK.length)?BK[i%BK.length]:URLS[i%URLS.length]}
-          function loadImg(src,ok,bad){
-            var im=new Image();
-            im.onload=function(){
-              if(im.decode){im.decode().then(function(){ok(im)},function(){ok(im)})}else ok(im)};
-            im.onerror=function(){bad()};
-            im.src=src}
-          function prepareNext(){
-            var i=bi;bnext={i:i,ready:false,im:null};var mine=bnext;
-            loadImg(srcAt(i),function(im){mine.ready=true;mine.im=im;bfails=0},function(){
-              bfails++;bi++;
-              setTimeout(function(){if(bnext===mine)prepareNext()},bfails>3?8000:600)})}
-          function showBg(){
-            if(!bnext||!bnext.ready){btimer=setTimeout(showBg,1500);return}
-            var m=bnext,nx=bgLayers[1-bcur],old=bgLayers[bcur];
-            nx.style.backgroundImage='url("'+m.im.src+'")';
-            nx.classList.remove('kb0','kb1');nx.classList.add(bi%2?'kb1':'kb0');
-            void nx.offsetWidth;nx.classList.add('on');old.classList.remove('on');
-            setTimeout(function(){if(!old.classList.contains('on'))old.style.backgroundImage='none'},3500);
-            bcur=1-bcur;bi++;bnext=null;
-            var pg=$('pg');pg.classList.remove('run');void pg.offsetWidth;pg.classList.add('run');
-            prepareNext();
-            btimer=setTimeout(showBg,BG_SECONDS*1000)}
-          function startBg(){prepareNext();showBg()}
-          window.addEventListener('online',function(){bfails=0;if(bnext&&!bnext.ready)prepareNext();syncTime();prayer();weather()});
-
-          /* ================== بيانات اليوم ================== */
-          var P=[['Fajr','الفجر'],['Dhuhr','الظهر'],['Asr','العصر'],['Maghrib','المغرب'],['Isha','العشاء']],T=null,H=null,cur='',curDay='';
-          var DY=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
-          var MN=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-          var AY=[["وَقُل رَّبِّ أَعُوذُ بِكَ مِنْ هَمَزَاتِ الشَّيَاطِينِ","سورة المؤمنون ٩٧"],["أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ","سورة الرعد ٢٨"],["فَإِنَّ مَعَ الْعُسْرِ يُسْرًا","سورة الشرح ٥"],["وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ","سورة الطلاق ٣"],["رَبِّ اشْرَحْ لِي صَدْرِي","سورة طه ٢٥"],["إِنَّ اللَّهَ مَعَ الصَّابِرِينَ","سورة البقرة ١٥٣"],["وَقُل رَّبِّ زِدْنِي عِلْمًا","سورة طه ١١٤"]];
-          $('city').textContent=CITY;
-          function dayKey(d){return d.getUTCFullYear()+'-'+(d.getUTCMonth()+1)+'-'+d.getUTCDate()}
-          /* تجهيز بيانات اليوم: من الذاكرة إن كانت لليوم نفسه، وإلا حساب محلي */
-          function prep(d){
-            var k=dayKey(d);
-            if(k===curDay)return;
-            curDay=k;
-            var c=null;try{c=JSON.parse(ld('ptc')||'null')}catch(e){}
-            var ok=c&&c.k===k;
-            var lh=toHijri(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate());
-            H=(ok&&c.H)?c.H:{day:lh.day,month:{ar:HM[lh.month-1]},year:lh.year};
-            T=(ok&&c.T)?c.T:calcPrayer(d,lh.month===9);
-            var a=AY[Math.floor((nowMs()+TZOFF)/864e5)%AY.length];
-            $('ayah').textContent='﴿'+a[0]+'﴾';$('sura').textContent=a[1];
-            cur='';lastMin=-1}
-          function at(s,add){var d=wall(),p=String(s).slice(0,5).split(':');d.setUTCHours(+p[0],+p[1],0,0);d.setUTCDate(d.getUTCDate()+add);return d}
-          function f12(s){var p=String(s).slice(0,5).split(':'),h=+p[0];return ar((h%12||12)+':'+p[1])+(h<12?' ص':' م')}
-          function hello(h){return h<5?'ليلة سعيدة':h<12?'صباح الخير':h<17?'طاب يومك':h<20?'مساء الخير':'مساء النور'}
-          var lastMin=-1;
-          function tick(){
-            var d=wall();prep(d);
-            var h=d.getUTCHours(),m=d.getUTCMinutes();
-            if(m!==lastMin){lastMin=m;saveClock();
-              $('time').textContent=ar((h%12||12)+':'+z(m));$('ampm').textContent=h<12?'ص':'م';
-              $('tsrc').textContent=(!synced&&!manual&&OFF!==0)?'⚠ الوقت تقديري (لا يوجد إنترنت) — اضبطه من زر الوقت':'';
-              $('gr').textContent=ar(d.getUTCDate())+' '+MN[d.getUTCMonth()]+' '+ar(d.getUTCFullYear());
-              $('hj').textContent=DY[d.getUTCDay()]+(H?'، '+ar(H.day)+' '+H.month.ar+' '+ar(H.year)+' هـ':'');
-              $('hello').textContent=hello(h);
-              var r=Math.ceil((RAMADAN-d)/864e5);
-              $('ram').innerHTML=r>0?'<div class="sm">رمضان ١٤٤٨</div><div class="big">'+ar(r)+' يوم</div>':''}
-            if(!T)return;
-            var nx=null,ad=null;
-            for(var k=0;k<5;k++){var tt=at(T[P[k][0]],0);if(d>=tt&&d-tt<12e4)ad=P[k][1]}
-            $('adhan').style.display=ad?'flex':'none';
-            if(ad)$('adhan').innerHTML='<div class="big">حان الآن موعد أذان '+ad+'</div>';
-            for(var i=0;i<5;i++){var t=at(T[P[i][0]],0);if(t>d){nx=[P[i][1],t];break}}
-            if(!nx)nx=[P[0][1],at(T.Fajr,1)];
-            var s=Math.floor((nx[1]-d)/1000);
-            $('nx').innerHTML='<div class="sm">الصلاة القادمة</div><div class="big">'+nx[0]+'</div><div class="sm">بعد '+ar(z(Math.floor(s/3600))+':'+z(Math.floor(s%3600/60))+':'+z(s%60))+'</div>';
-            if(cur!==nx[0]){cur=nx[0];draw()}}
-          function draw(){var h='';for(var i=0;i<5;i++){h+='<div class="pt'+(P[i][1]===cur?' on':'')+'"><div class="sm">'+P[i][1]+'</div><div>'+f12(T[P[i][0]])+'</div></div>'}$('list').innerHTML=h}
-          function prayer(){
-            fetch('https://api.aladhan.com/v1/timings?latitude='+LAT+'&longitude='+LON+'&method=4&timezonestring='+TZ)
-            .then(function(r){return r.json()}).then(function(j){
-              T=j.data.timings;H=j.data.date.hijri;
-              sv('ptc',JSON.stringify({k:dayKey(wall()),T:T,H:H}));
-              cur='';lastMin=-1;tick()}).catch(function(){})}
-          function wc(c){if(c==0)return'صحو';if(c<3)return'غائم جزئياً';if(c==3)return'غائم';if(c==45||c==48)return'ضباب';if(c<60)return'رذاذ';if(c<70)return'مطر';if(c<80)return'ثلج';if(c<90)return'زخات مطر';return'عاصفة رعدية'}
-          function showWx(w){
-            $('temp').textContent=ar(w.t)+'°';$('cond').textContent=w.c;$('hl').textContent=w.hl;
-            $('temp').style.opacity=(nowMs()-w.ts>108e5)?.5:1}
-          function weather(){
-            fetch('https://api.open-meteo.com/v1/forecast?latitude='+LAT+'&longitude='+LON+'&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto')
-            .then(function(r){return r.json()}).then(function(j){
-              var w={t:Math.round(j.current.temperature_2m),c:wc(j.current.weather_code),
-                hl:'↑'+ar(Math.round(j.daily.temperature_2m_max[0]))+'° ↓'+ar(Math.round(j.daily.temperature_2m_min[0]))+'°',ts:nowMs()};
-              sv('wx',JSON.stringify(w));showWx(w)}).catch(function(){})}
-          try{var w0=JSON.parse(ld('wx')||'null');if(w0)showWx(w0)}catch(e){}
-
-          /* ================== الدوك ================== */
-          var GEAR='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 2.8l1.5 2.4 2.8-.6.9 2.7 2.7.9-.6 2.8 2.4 1.5-2.4 1.5.6 2.8-2.7.9-.9 2.7-2.8-.6L12 21.2l-1.5-2.4-2.8.6-.9-2.7-2.7-.9.6-2.8L2.3 12l2.4-1.5-.6-2.8 2.7-.9.9-2.7 2.8.6z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
-          var HD='<svg viewBox="0 0 24 24"><path d="M3 6.5h18v7.2l-3.2 3.3H15v2H9v-2H6.2L3 13.7z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 10h10M7 12.6h10" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>';
-          var GRID='<svg viewBox="0 0 24 24" fill="#fff"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
-          var CLK='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M12 7v5.2l3.4 2" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-          var DOCK=[
-            {label:'ثمانية',spec:'name:ثمانية|thmanyah',logo:'thmanyah.png'},
-            {label:'شاشا',spec:'name:شاشا|shasha',logo:'shasha.png'},
-            {label:'Google Play',spec:'pkg:com.android.vending',logo:'googleplay.png'},
-            {label:'YouTube',spec:'pkg:com.google.android.youtube.tv',logo:'youtube.png'},
-            {label:'Netflix',spec:'pkg:com.netflix.ninja',logo:'netflix.png'},
-            {label:'HDMI',act:'hdmi',svg:HD},
-            {label:'التطبيقات',act:'apps',svg:GRID},
-            {label:'الوقت',act:'time',svg:CLK},
-            {label:'الإعدادات',spec:'settings',svg:GEAR}
-          ];
-          var lastTile=null;
-          function iconUrl(pkg){return'https://icons.local/'+encodeURIComponent(pkg)+'?s='+Date.now()}
-          function fillIcon(box,pkg,label){
-            box.innerHTML='';
-            if(pkg){var im=new Image();im.alt='';
-              im.onerror=function(){box.innerHTML='<span class="ch">'+esc(label.charAt(0).toUpperCase())+'</span>'};
-              im.src=iconUrl(pkg);box.appendChild(im)}
-            else box.innerHTML='<span class="ch">'+esc(label.charAt(0).toUpperCase())+'</span>'}
-          function mkTile(o,onclick){
-            var b=document.createElement('button');b.className='t';b.setAttribute('data-f','1');
-            b.innerHTML='<div class="ic"></div><div class="lb">'+esc(o.label)+'</div>';
-            b.onclick=function(){lastTile=b;onclick()};
-            return b}
-          function setTile(b,o){
-            var box=b.firstChild;
-            if(o.svg){box.innerHTML=o.svg;return}
-            var pkg=AND?AND.resolve(o.spec):'';
-            b.classList.toggle('off',!!AND&&!pkg);
-            fillIcon(box,pkg,o.label);
-            if(o.logo){var im=new Image();im.alt='';
-              im.onload=function(){box.innerHTML='';box.appendChild(im)};
-              im.src='logos/'+o.logo}}
-          function buildDock(){
-            var dk=$('apps');dk.innerHTML='';
-            DOCK.forEach(function(o){
-              var b=mkTile(o,function(){
-                if(o.act==='hdmi')openHdmi();else if(o.act==='apps')openApps();else if(o.act==='time')openTime();else L(o.spec)});
-              o.el=b;dk.appendChild(b);setTile(b,o)})}
-          function refreshDock(){DOCK.forEach(function(o){if(o.el)setTile(o.el,o)})}
-
-          /* ================== HDMI ================== */
-          var PORT_SVG='<svg viewBox="0 0 24 24"><path d="M3 6.5h18v7.2l-3.2 3.3H15v2H9v-2H6.2L3 13.7z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 10h10M7 12.6h10" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>';
-          function openHdmi(){
-            var list=[];try{list=JSON.parse(AND?AND.inputs():'[]')||[]}catch(e){}
-            var box=$('ports');box.innerHTML='';
-            if(!list.length){
-              box.innerHTML='<div style="text-align:center;max-width:46vw"><div class="sm" style="font-size:1.7vw;line-height:1.8">لم يتم العثور على منافذ HDMI من النظام.<br>يمكنك فتح التلفزيون المباشر واختيار المصدر من هناك.</div><button class="btn" data-f="1" id="liveBtn">فتح التلفزيون المباشر</button></div>';
-              $('liveBtn').onclick=function(){closeOv();L('name:تلفزيون مباشر|live tv|live channels|tv')}}
-            else list.forEach(function(p){
-              var c=document.createElement('button');c.className='pc'+(p.connected?' on':'');c.setAttribute('data-f','1');
-              c.innerHTML=PORT_SVG+'<div class="nm">'+esc(p.label)+'</div><div class="dv">'+esc(p.device||'')+'</div><div class="st"><span class="dot"></span>'+(p.connected?'متصل':'غير متصل')+'</div>';
-              c.onclick=function(){closeOv();L('input:'+p.id)};
-              box.appendChild(c)});
-            showOv('ovHdmi',box.querySelector('.pc.on')||box.querySelector('[data-f]'))}
-
-          /* ================== كل التطبيقات ================== */
-          function openApps(){
-            var list=[];try{list=JSON.parse(AND?AND.apps():'[]')||[]}catch(e){}
-            var g=$('grid');g.innerHTML='';$('appcount').textContent=ar(list.length)+' تطبيق';
-            list.forEach(function(p){
-              var b=mkTile({label:p.label},function(){closeOv();L('pkg:'+p.pkg)});
-              fillIcon(b.firstChild,p.pkg,p.label);g.appendChild(b)});
-            showOv('ovApps',g.querySelector('[data-f]'))}
-
-          /* ================== ضبط الوقت يدوياً ================== */
-          var TF=null;
-          var FL=[['y','السنة',2025,2045],['mo','الشهر',1,12],['d','اليوم',1,31],['h','الساعة',0,23],['mi','الدقيقة',0,59]];
-          function dim(y,m){return new Date(Date.UTC(y,m,0)).getUTCDate()}
-          function paintTf(){FL.forEach(function(f){var k=f[0];$('f_'+k).querySelector('.v').textContent=ar((k==='h'||k==='mi')?z(TF[k]):TF[k])})}
-          function openTime(){
-            var d=wall();
-            TF={y:d.getUTCFullYear(),mo:d.getUTCMonth()+1,d:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes()};
-            var box=$('tfields');box.innerHTML='';
-            FL.forEach(function(f){
-              var b=document.createElement('button');b.className='fld';b.id='f_'+f[0];
-              b.setAttribute('data-f','1');b.setAttribute('data-k',f[0]);
-              b.innerHTML='<div class="a">▲</div><div class="v"></div><div class="a">▼</div><div class="u">'+f[1]+'</div>';
-              box.appendChild(b)});
-            var s=document.createElement('button');s.className='btn';s.setAttribute('data-f','1');s.textContent='حفظ';s.onclick=saveTime;box.appendChild(s);
-            paintTf();showOv('ovTime',$('f_h'))}
-          function adj(k,dir){
-            var f=FL.filter(function(x){return x[0]===k})[0],mx=(k==='d')?dim(TF.y,TF.mo):f[3],v=TF[k]+dir;
-            if(v>mx)v=f[2];if(v<f[2])v=mx;
-            TF[k]=v;
-            var md=dim(TF.y,TF.mo);if(TF.d>md)TF.d=md;
-            paintTf()}
-          function saveTime(){
-            var ms=Date.UTC(TF.y,TF.mo-1,TF.d,TF.h,TF.mi,0)-TZOFF;
-            OFF=ms-Date.now();manual=true;saveClock();curDay='';closeOv();tick()}
-
-          /* ================== النوافذ + التنقل بالريموت ================== */
-          var openOvEl=null;
-          function showOv(id,focusEl){openOvEl=$(id);openOvEl.classList.add('show');if(focusEl)focusEl.focus()}
-          function closeOv(){
-            if(!openOvEl)return false;
-            openOvEl.classList.remove('show');openOvEl=null;
-            var t=lastTile&&document.body.contains(lastTile)?lastTile:$('apps').firstChild;
-            if(t)t.focus();return true}
-          function onBackKey(){closeOv();return true}
-          function goHome(){closeOv();var f=$('apps').firstChild;if(f)f.focus()}
-          function layerItems(){
-            var root=openOvEl||$('apps');
-            return[].slice.call(root.querySelectorAll('[data-f]'))}
-          function move(dir){
-            var els=layerItems();if(!els.length)return;
-            var c=document.activeElement;
-            if(els.indexOf(c)<0){els[0].focus();return}
-            var r=c.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,best=null,bs=1e9;
-            els.forEach(function(e){
-              if(e===c)return;
-              var q=e.getBoundingClientRect(),dx=q.left+q.width/2-cx,dy=q.top+q.height/2-cy,main,cross;
-              if(dir==='L'){main=-dx;cross=Math.abs(dy)}else if(dir==='R'){main=dx;cross=Math.abs(dy)}
-              else if(dir==='U'){main=-dy;cross=Math.abs(dx)}else{main=dy;cross=Math.abs(dx)}
-              if(main<=2)return;
-              var sc=main+cross*3;if(sc<bs){bs=sc;best=e}});
-            if(best){best.focus();if(best.scrollIntoView)best.scrollIntoView({block:'nearest',inline:'nearest'})}}
-          document.addEventListener('keydown',function(e){
-            var k=e.key,c=e.keyCode,d=null;
-            if(k==='ArrowLeft'||c===21)d='L';else if(k==='ArrowRight'||c===22)d='R';
-            else if(k==='ArrowUp'||c===19)d='U';else if(k==='ArrowDown'||c===20)d='D';
-            if(d){
-              var a0=document.activeElement;
-              if((d==='U'||d==='D')&&openOvEl&&openOvEl.id==='ovTime'&&a0&&a0.getAttribute&&a0.getAttribute('data-k')){
-                e.preventDefault();adj(a0.getAttribute('data-k'),d==='U'?1:-1);return}
-              e.preventDefault();move(d);return}
-            if(k==='Enter'||c===13||c===23||c===66){
-              var a=document.activeElement;
-              if(a&&a.getAttribute&&a.getAttribute('data-f')){e.preventDefault();a.click()}return}
-            if(k==='Escape'||k==='Backspace'||k==='GoBack'){e.preventDefault();onBackKey()}});
-          document.addEventListener('focusout',function(){
-            setTimeout(function(){
-              if(document.activeElement===document.body||!document.activeElement){
-                var els=layerItems();if(els.length)els[0].focus()}},50)});
-
-          /* ================== تشغيل ================== */
-          buildDock();
-          var f0=$('apps').firstChild;if(f0)f0.focus();
-          tick();
-          startBg();syncTime();prayer();weather();
-          setInterval(tick,1000);setInterval(prayer,36e5);setInterval(weather,9e5);setInterval(syncTime,6e5);
-          setTimeout(refreshDock,4000);
-          </script></body></html>
+          <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://api.aladhan.com https://api.open-meteo.com; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+          <title>Ø´Ø§Ø´Ø© â€¢ Ù…Ù†Ø²Ù„Ùƒ Ø¹Ù„Ù‰ Ø§Ù„ØªÙ„ÙØ²ÙŠÙˆÙ†</title><link rel="stylesheet" href="style.css">
+          <script defer src="core.js"></script><script defer src="prayer.js"></script><script defer src="app.js"></script></head>
+          <body><main id="home">
+          <header><div><strong class="brand">Ø´Ø§Ø´Ø©<span>Ù…Ù†Ø²Ù„Ùƒ Ø¹Ù„Ù‰ Ø§Ù„ØªÙ„ÙØ²ÙŠÙˆÙ†</span></strong><p id="date"></p></div><div class="weather"><strong id="temperature">â€”Â°</strong><span id="weather">Ø§Ù„Ù‚Ø±ÙŠØ§Øª Â· Ø§Ù„Ø·Ù‚Ø³ ØºÙŠØ± Ù…ØªØ§Ø­</span><small id="weatherAge"></small></div></header>
+          <section class="hero"><div><p id="greeting">Ø£Ù‡Ù„Ù‹Ø§ Ø¨Ùƒ</p><h1 id="clock">â€”:â€”</h1><p id="clockNote">Ø§Ù„ÙˆÙ‚Øª Ù…Ù† Ø³Ø§Ø¹Ø© Ø§Ù„Ø¬Ù‡Ø§Ø²</p></div><aside><small>Ù„Ø­Ø¸Ø© Ø·Ù…Ø£Ù†ÙŠÙ†Ø©</small><blockquote>ï´¿ÙÙŽØ¥ÙÙ†ÙŽÙ‘ Ù…ÙŽØ¹ÙŽ Ø§Ù„Ù’Ø¹ÙØ³Ù’Ø±Ù ÙŠÙØ³Ù’Ø±Ù‹Ø§ï´¾</blockquote><p>Ø³ÙˆØ±Ø© Ø§Ù„Ø´Ø±Ø­ Â· Ù¥</p><div id="next">Ø¬Ø§Ø±Ù ØªØ¬Ù‡ÙŠØ² Ù…ÙˆØ§Ù‚ÙŠØª Ø§Ù„ØµÙ„Ø§Ø©</div></aside></section>
+          <section class="prayers"><div id="prayerList"></div><small id="prayerNote">Ø­Ø³Ø§Ø¨ Ù…Ø­Ù„ÙŠ ØªÙ‚Ø±ÙŠØ¨ÙŠ Â· Ø§Ù„Ù‚Ø±ÙŠØ§Øª</small></section>
+          <section><div class="sectionTitle"><h2>ØªØ·Ø¨ÙŠÙ‚Ø§ØªÙƒ Ø§Ù„Ù…ÙØ¶Ù„Ø©</h2><small>Ø§Ø¶ØºØ· Ù…Ø·ÙˆÙ„Ù‹Ø§ Ø¹Ù„Ù‰ Ù…ÙˆØ§ÙÙ‚ Ù„Ø¥Ø²Ø§Ù„Ø© Ù…ÙØ¶Ù„Ø©</small></div><div id="favorites" class="row"></div></section>
+          <nav id="tools"><button data-action="apps">â–¦ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª</button><button data-action="inputs">HDMI Ø§Ù„Ù…ØµØ§Ø¯Ø±</button><button data-action="options">â—‰ ØªØ®ØµÙŠØµ</button><button data-action="settings">âš™ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø¬Ù‡Ø§Ø²</button></nav>
+          <footer><span id="network"></span><span>Ø§Ù„Ø£Ø³Ù‡Ù… Ù„Ù„ØªÙ†Ù‚Ù„ Â· Ù…ÙˆØ§ÙÙ‚ Ù„Ù„Ø§Ø®ØªÙŠØ§Ø± Â· Ø§Ù„Ø±Ø¬ÙˆØ¹ Ù„Ù„Ø¥ØºÙ„Ø§Ù‚</span></footer>
+          </main>
+          <section id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden><div class="panel"><div class="sectionTitle"><h2 id="modalTitle"></h2><button id="close">Ø¥ØºÙ„Ø§Ù‚</button></div><p id="modalHint"></p><div id="modalContent"></div></div></section>
+          <div id="toast" role="status" hidden></div>
+          </body></html>
           EOF
-          sed -i "s/__BUILD_TS__/$(date +%s)000/" app/src/main/assets/index.html
-      - uses: actions/cache@v4
+          cat > app/src/main/assets/style.css <<'EOF'
+          :root{--bg:#0b1320;--panel:#142337;--accent:#85e3cf;--muted:#b0c0d3;--line:#30445c}
+          *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f4f7fc;font:1.25vw sans-serif;height:100vh;overflow:hidden}body.blue{--accent:#a6c8ff;--bg:#10182d;--panel:#1b2946}body.warm{--accent:#ffd291;--bg:#201b18;--panel:#302824}
+          [hidden]{display:none!important}main{height:100vh;padding:3vh 4vw;display:flex;flex-direction:column;justify-content:space-between;gap:1vh}header,.hero,.sectionTitle,footer{display:flex;justify-content:space-between;align-items:center}p,h1,h2,blockquote{margin:0}header p{color:var(--muted);margin-top:.7vh;font-size:1.2vw}.brand{font-size:2.4vw}.brand span{font-size:1.05vw;color:var(--accent);margin-right:1vw}.weather{display:flex;flex-direction:column;text-align:left;gap:.3vh}.weather strong{font-size:2.5vw}.weather span,.weather small{color:var(--muted)}.hero{min-height:26vh;gap:4vw}.hero>div{flex:1}.hero #greeting{color:var(--accent);font-size:1.8vw}#clock{font-size:8.3vw;line-height:1.1;font-weight:600;font-variant-numeric:tabular-nums}#clockNote{color:var(--muted);font-size:1vw}aside{width:38vw;background:var(--panel);border-right:3px solid var(--accent);border-radius:1vw;padding:2vh 2vw}aside small,aside p{color:var(--muted)}blockquote{font-family:serif;font-size:2.1vw;line-height:1.7;margin:.6vh 0}#next{margin-top:1.5vh;color:var(--accent);font-size:1.4vw}
+          .prayers{border:1px solid var(--line);border-radius:1vw;padding:1vh 1vw}#prayerList{display:flex;justify-content:space-around}.prayer{text-align:center;padding:.5vh 2vw;border-radius:.5vw}.prayer strong{display:block;margin-top:.5vh}.prayer.active{background:var(--panel);color:var(--accent)}#prayerNote{display:block;text-align:center;color:var(--muted);margin-top:.6vh;font-size:.95vw}.sectionTitle{margin-bottom:1vh}h2{font-size:1.5vw}.sectionTitle small,footer{font-size:1vw;color:var(--muted)}.row{display:flex;gap:1vw;overflow-x:auto;padding:1vh .4vw;scrollbar-width:none}.tile{flex:0 0 10vw;min-height:12vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8vh;padding:1vh}.tile img{width:4vw;height:4vw;object-fit:contain}.tile .letter{font-size:2.5vw;color:var(--accent)}.tile span{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:1.1vw}button{font:inherit;color:inherit;background:var(--panel);border:2px solid transparent;border-radius:.7vw;padding:1.2vh 1.5vw;cursor:pointer}button:focus{outline:3px solid var(--accent);outline-offset:2px;background:#32475e}button:disabled{opacity:.5}#tools{display:flex;gap:1vw}#tools button{flex:1}footer{padding-top:1vh}#modal{position:fixed;inset:0;background:#070d17ed;display:flex;align-items:center;justify-content:center;z-index:10}.panel{width:90vw;max-height:90vh;padding:3vh 3vw;background:var(--bg);border:1px solid var(--line);border-radius:1vw;overflow:auto}#modalHint{color:var(--muted);margin:1vh 0 2vh}#modalContent{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1.2vw;padding:1vh .4vw;max-height:66vh;overflow:auto}#modalContent .wide{grid-column:1/-1;text-align:right}#toast{position:fixed;bottom:5vh;left:15vw;right:15vw;padding:2vh;background:#edf9f5;color:#122033;text-align:center;border-radius:.5vw;z-index:30}.quiet header,.quiet aside,.quiet .prayers,.quiet footer{opacity:.65}
+          EOF
+          cat > app/src/main/assets/app.js <<'EOF'
+          'use strict';
+          const $=id=>document.getElementById(id),C=Core;
+          function read(key,fallback){try{const v=JSON.parse(localStorage.getItem(key));return v===null?fallback:v;}catch(_){return fallback;}}
+          function store(key,value){try{localStorage.setItem(key,JSON.stringify(value));}catch(_){}}
+          let prefs=read('shasha.v2.prefs',{});
+          if(!prefs||typeof prefs!=='object'||Array.isArray(prefs))prefs={};
+          function applyPrefs(){document.body.className=(["blue","warm"].includes(prefs.theme)?prefs.theme:'')+(prefs.quiet?' quiet':'');}
+          applyPrefs();
+          let toastTimer;
+          function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
+          let requestId=0;const pending=new Map();
+          if(window.Native)window.Native.onmessage=event=>{
+            try{const message=JSON.parse(event.data),p=pending.get(message.id);if(!p)return;clearTimeout(p.timer);pending.delete(message.id);message.error?p.reject(Error(message.error)):p.resolve(message.data);}catch(_){toast('Ø§Ø³ØªØ¬Ø§Ø¨Ø© ØºÙŠØ± ØµØ§Ù„Ø­Ø© Ù…Ù† Ø§Ù„Ù†Ø¸Ø§Ù…');}
+          };
+          function native(method,arg=''){
+            if(!window.Native)return Promise.reject(Error('ÙØªØ­ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª ÙˆØ§Ù„Ù…ØµØ§Ø¯Ø± Ù…ØªØ§Ø­ Ø¯Ø§Ø®Ù„ ØªØ·Ø¨ÙŠÙ‚ Android TV ÙÙ‚Ø·'));
+            return new Promise((resolve,reject)=>{
+              const id=++requestId,timer=setTimeout(()=>{pending.delete(id);reject(Error('Ù„Ù… ÙŠØ³ØªØ¬Ø¨ Ø§Ù„Ù†Ø¸Ø§Ù…ØŒ Ø­Ø§ÙˆÙ„ Ù…Ø¬Ø¯Ø¯Ù‹Ø§'));},10000);
+              pending.set(id,{resolve,reject,timer});
+              try{window.Native.postMessage(JSON.stringify({id,method,arg}));}catch(error){clearTimeout(timer);pending.delete(id);reject(error);}
+            });
+          }
+          function launch(spec){return native('launch',spec).catch(error=>toast(error.message));}
+          function button(text,action,cls=''){const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=text;b.onclick=action;return b;}
+          let modalToken=0,returnFocus=null;
+          function visible(el){return !!el&&!el.disabled&&el.getClientRects().length>0;}
+          function openModal(title,hint){
+            if($('modal').hidden)returnFocus=document.activeElement;
+            modalToken++;$('modalTitle').textContent=title;$('modalHint').textContent=hint;$('modalContent').textContent='';$('modal').hidden=false;
+            $('home').setAttribute('aria-hidden','true');$('close').focus();return modalToken;
+          }
+          function closeModal(){
+            if($('modal').hidden)return false;
+            modalToken++;$('modal').hidden=true;$('home').removeAttribute('aria-hidden');
+            const target=visible(returnFocus)?returnFocus:$('tools').querySelector('button');target.focus();returnFocus=null;return true;
+          }
+          window.back=()=>{closeModal();};
+          window.goHome=()=>{closeModal();const first=$('favorites').querySelector('button')||$('tools').querySelector('button');first.focus();};
+          $('close').onclick=closeModal;
+          let appList=[],favorites=read('shasha.v2.favorites',null),appsBusy=false;
+          if(favorites!==null&&(!Array.isArray(favorites)||favorites.some(p=>typeof p!=='string')))favorites=null;
+          function saveFavorites(){store('shasha.v2.favorites',favorites);}
+          function tile(app,action){
+            const b=button('',action,'tile');b.dataset.pkg=app.pkg;b.setAttribute('aria-label',app.label);
+            const image=document.createElement('img');image.alt='';image.loading='lazy';image.decoding='async';image.width=96;image.height=96;
+            image.onerror=()=>{const letter=document.createElement('strong');letter.className='letter';letter.textContent=app.label.slice(0,1);image.replaceWith(letter);};
+            image.src='/icons/'+encodeURIComponent(app.pkg);const label=document.createElement('span');label.textContent=app.label;b.append(image,label);return b;
+          }
+          function renderFavorites(){
+            const dock=$('favorites'),selected=document.activeElement,wasFocused=dock.contains(selected),pkg=selected&&selected.dataset.pkg;
+            dock.textContent='';
+            (favorites||[]).forEach(id=>{const app=appList.find(a=>a.pkg===id);if(app)dock.appendChild(tile(app,()=>launch('pkg:'+id)));});
+            dock.appendChild(button('+ Ø¥Ø¶Ø§ÙØ©',()=>openApps(true),'tile'));
+            if(wasFocused){const match=Array.from(dock.children).find(b=>b.dataset.pkg===pkg)||dock.firstElementChild;match.focus();}
+          }
+          async function refreshApps(){
+            if(appsBusy||!window.Native)return;appsBusy=true;
+            try{
+              const list=await native('apps');if(!Array.isArray(list))throw Error('Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª ØºÙŠØ± ØµØ§Ù„Ø­Ø©');
+              appList=list.filter(a=>a&&typeof a.pkg==='string'&&typeof a.label==='string');
+              if(favorites===null){
+                const preferred=appList.filter(a=>/youtube|netflix|Ø«Ù…Ø§Ù†ÙŠØ©|thmanyah|Ø´Ø§Ø´Ø§|shasha|vending/i.test(a.pkg+' '+a.label));
+                favorites=preferred.slice(0,6).map(a=>a.pkg);saveFavorites();
+              }
+              renderFavorites();
+            }catch(error){toast(error.message);}finally{appsBusy=false;}
+          }
+          async function openApps(addMode=false){
+            const token=openModal(addMode?'Ø¥Ø¶Ø§ÙØ© Ø¥Ù„Ù‰ Ø§Ù„Ù…ÙØ¶Ù„Ø©':'ÙƒÙ„ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª',addMode?'Ø§Ø®ØªØ± ØªØ·Ø¨ÙŠÙ‚Ù‹Ø§ Ù„ØªØ«Ø¨ÙŠØªÙ‡ ÙÙŠ Ø§Ù„Ø´Ø§Ø´Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©.':'Ù…ÙˆØ§ÙÙ‚ Ù„ÙØªØ­ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚ Â· Ø¶ØºØ·Ø© Ù…Ø·ÙˆÙ„Ø© Ù„Ø¥Ø¶Ø§ÙØªÙ‡ Ø¥Ù„Ù‰ Ø§Ù„Ù…ÙØ¶Ù„Ø©');
+            if(!appList.length)await refreshApps();if(token!==modalToken)return;
+            if(!appList.length){$('modalHint').textContent=window.Native?'Ù„Ø§ ØªÙˆØ¬Ø¯ ØªØ·Ø¨ÙŠÙ‚Ø§Øª Ø¸Ø§Ù‡Ø±Ø© Ù„Ù„Ù†Ø¸Ø§Ù….':'Ù‡Ø°Ù‡ Ù…Ø¹Ø§ÙŠÙ†Ø© ÙˆÙŠØ¨Ø› Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª Ø§Ù„Ù…Ø«Ø¨ØªØ© ØªØ¸Ù‡Ø± Ø¯Ø§Ø®Ù„ ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„ØªÙ„ÙØ²ÙŠÙˆÙ†.';return;}
+            appList.forEach(app=>{
+              const b=tile(app,()=>{
+                if(addMode){addFavorite(app.pkg);closeModal();}else{closeModal();launch('pkg:'+app.pkg);}
+              });b.dataset.favoriteAction='add';$('modalContent').appendChild(b);
+            });$('modalContent').firstElementChild.focus();
+          }
+          function addFavorite(pkg){
+            if(favorites===null)favorites=[];
+            if(favorites.includes(pkg)){toast('Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù…ÙØ¶Ù„Ø©');return;}
+            if(favorites.length>=12){toast('Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰ Ù¡Ù¢ ØªØ·Ø¨ÙŠÙ‚Ù‹Ø§Ø› Ø£Ø²Ù„ Ù…ÙØ¶Ù„Ø© Ø£ÙˆÙ„Ù‹Ø§');return;}
+            favorites.push(pkg);saveFavorites();renderFavorites();toast('ØªÙ…Øª Ø§Ù„Ø¥Ø¶Ø§ÙØ© Ø¥Ù„Ù‰ Ø§Ù„Ù…ÙØ¶Ù„Ø©');
+          }
+          async function openInputs(){
+            const token=openModal('Ù…ØµØ§Ø¯Ø± HDMI','Ø¬Ø§Ø±Ù Ù‚Ø±Ø§Ø¡Ø© Ø§Ù„Ù…ØµØ§Ø¯Ø± Ù…Ù† Ø§Ù„Ù†Ø¸Ø§Ù…â€¦');
+            try{
+              const inputs=await native('inputs');if(token!==modalToken)return;
+              $('modalHint').textContent=inputs.length?'Ù…ÙˆØ§ÙÙ‚ Ù„Ù„ØªØ¨Ø¯ÙŠÙ„Ø› ØªÙˆÙØ± Ø§Ù„Ù…Ù†Ø§ÙØ° ÙŠØ¹ØªÙ…Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ø´Ø±ÙƒØ© Ø§Ù„Ù…ØµÙ†Ù‘Ø¹Ø©.':'Ù„Ù… ÙŠÙƒØ´Ù Ø§Ù„Ù†Ø¸Ø§Ù… Ù…Ù†Ø§ÙØ° HDMI. Ø§Ø³ØªØ®Ø¯Ù… Ø²Ø± Input ÙÙŠ Ø±ÙŠÙ…ÙˆØª Ø§Ù„ØªÙ„ÙØ²ÙŠÙˆÙ† Ø£Ùˆ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø¬Ù‡Ø§Ø².';
+              inputs.forEach(input=>$('modalContent').appendChild(button(input.label+' Â· '+input.state,()=>{closeModal();launch('input:'+input.id);},'wide')));
+              $('modalContent').appendChild(button('ÙØªØ­ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø¬Ù‡Ø§Ø²',()=>launch('settings'),'wide'));
+              $('modalContent').firstElementChild.focus();
+            }catch(error){if(token===modalToken)$('modalHint').textContent=error.message;}
+          }
+          EOF
+          cat >> app/src/main/assets/app.js <<'EOF'
+          function openOptions(){
+            openModal('ØªØ®ØµÙŠØµ Ø´Ø§Ø´Ø©','Ø§Ø®ØªÙŠØ§Ø±Ø§Øª Ø®ÙÙŠÙØ© Ù…Ø­ÙÙˆØ¸Ø© Ø¹Ù„Ù‰ Ø¬Ù‡Ø§Ø²Ùƒ. Ø§Ù„Ù…Ø¯ÙŠÙ†Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©: Ø§Ù„Ù‚Ø±ÙŠØ§ØªØŒ Ø§Ù„Ø³Ø¹ÙˆØ¯ÙŠØ©.');
+            const content=$('modalContent');
+            [['','Ù†Ø¹Ù†Ø§Ø¹'],['blue','Ø£Ø²Ø±Ù‚'],['warm','Ø¯Ø§ÙØ¦']].forEach(([theme,label])=>content.appendChild(button('Ù„ÙˆÙ† '+label,()=>{prefs.theme=theme;store('shasha.v2.prefs',prefs);applyPrefs();toast('ØªÙ… ØªØºÙŠÙŠØ± Ø§Ù„Ù„ÙˆÙ†');})));
+            content.appendChild(button('Ø§Ù„ÙˆØ¶Ø¹ Ø§Ù„Ù‡Ø§Ø¯Ø¦: '+(prefs.quiet?'Ù…ÙØ¹Ù‘Ù„':'Ù…ØªÙˆÙ‚Ù'),()=>{prefs.quiet=!prefs.quiet;store('shasha.v2.prefs',prefs);applyPrefs();openOptions();},'wide'));
+            content.appendChild(button('ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø·Ù‚Ø³ ÙˆØ§Ù„ØµÙ„Ø§Ø©',()=>{refreshData(true);toast('Ø¬Ø§Ø±Ù Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©Ø› ØªØ¨Ù‚Ù‰ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø­Ù„ÙŠØ© Ù…ØªØ§Ø­Ø©');},'wide'));
+            content.appendChild(button('Ø¶Ø¨Ø· ØªØ§Ø±ÙŠØ® ÙˆÙˆÙ‚Øª Ø§Ù„Ø¬Ù‡Ø§Ø²',()=>launch('date'),'wide'));
+            content.appendChild(button('Ø§Ø®ØªÙŠØ§Ø± ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ø´Ø§Ø´Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©',()=>launch('home'),'wide'));
+            content.appendChild(button('Ø­ÙˆÙ„ Ø§Ù„ÙˆÙ‚Øª ÙˆØ§Ù„Ø¯Ù‚Ø©',()=>toast('Ø³Ø§Ø¹Ø© Ø§Ù„Ø¬Ù‡Ø§Ø² Ù‡ÙŠ Ø§Ù„Ù…Ø±Ø¬Ø¹. Ø§Ù„ØµÙ„Ø§Ø© Ø§Ù„Ù…Ø­Ù„ÙŠØ© ØªÙ‚Ø¯ÙŠØ±ÙŠØ©Ø› Ù‚Ø§Ø±Ù†Ù‡Ø§ Ø¨Ø§Ù„ØªÙ‚ÙˆÙŠÙ… Ø§Ù„Ù…Ø¹ØªÙ…Ø¯.'),'wide'));
+            content.firstElementChild.focus();
+          }
+          document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{
+            const action=b.dataset.action;if(action==='apps')openApps();else if(action==='inputs')openInputs();else if(action==='options')openOptions();else launch('settings');
+          });
+          function move(direction){
+            const root=$('modal').hidden?$('home'):$('modal');
+            const items=Array.from(root.querySelectorAll('button')).filter(visible);
+            if(!items.length)return;const active=document.activeElement;
+            if(!items.includes(active)){items[0].focus();return;}
+            const box=active.getBoundingClientRect(),cx=box.left+box.width/2,cy=box.top+box.height/2;
+            let best=null,score=Infinity;
+            items.forEach(item=>{
+              if(item===active)return;const r=item.getBoundingClientRect(),dx=r.left+r.width/2-cx,dy=r.top+r.height/2-cy;
+              const primary=direction==='Left'?-dx:direction==='Right'?dx:direction==='Up'?-dy:dy;
+              const cross=direction==='Left'||direction==='Right'?Math.abs(dy):Math.abs(dx);
+              if(primary<=4)return;const cost=primary+cross*4;if(cost<score){score=cost;best=item;}
+            });
+            if(best){best.focus();best.scrollIntoView({block:'nearest',inline:'nearest'});}
+          }
+          let hold=null,holdTimer=null;
+          function cancelHold(){clearTimeout(holdTimer);hold=null;}
+          function favoriteHold(target){
+            const pkg=target.dataset.pkg;if(!pkg)return;
+            if($('favorites').contains(target)){
+              favorites=(favorites||[]).filter(p=>p!==pkg);saveFavorites();renderFavorites();toast('Ø£Ø²ÙŠÙ„ Ù…Ù† Ø§Ù„Ù…ÙØ¶Ù„Ø© ÙÙ‚Ø·Ø› Ù„Ù… ÙŠÙØ­Ø°Ù Ø§Ù„ØªØ·Ø¨ÙŠÙ‚');
+            }else addFavorite(pkg);
+          }
+          document.addEventListener('keydown',event=>{
+            const direction=event.key.startsWith('Arrow')?event.key.slice(5):null;
+            if(direction){event.preventDefault();cancelHold();move(direction);return;}
+            if(['Escape','Backspace','GoBack','BrowserBack'].includes(event.key)){event.preventDefault();cancelHold();closeModal();return;}
+            if(event.key==='Enter'||event.keyCode===23||event.keyCode===66){
+              event.preventDefault();if(event.repeat||hold)return;
+              const target=document.activeElement;if(!target||target.tagName!=='BUTTON')return;
+              hold={target,long:false};
+              if(target.dataset.pkg)holdTimer=setTimeout(()=>{if(hold){hold.long=true;favoriteHold(target);}},700);
+            }
+          });
+          document.addEventListener('keyup',event=>{
+            if(event.key==='Enter'||event.keyCode===23||event.keyCode===66){
+              event.preventDefault();const pressed=hold;cancelHold();if(pressed&&!pressed.long&&visible(pressed.target))pressed.target.click();
+            }
+          });
+          window.addEventListener('blur',cancelHold);
+          const names={Fajr:'Ø§Ù„ÙØ¬Ø±',Dhuhr:'Ø§Ù„Ø¸Ù‡Ø±',Asr:'Ø§Ù„Ø¹ØµØ±',Maghrib:'Ø§Ù„Ù…ØºØ±Ø¨',Isha:'Ø§Ù„Ø¹Ø´Ø§Ø¡'};
+          let day='',today=null,tomorrow=null,lastClock='',lastPrayer='',lastNext='',lastFetch=0,busy=false;
+          let prayerCache=read('shasha.v2.prayers',{});
+          if(!prayerCache||typeof prayerCache!=='object'||Array.isArray(prayerCache))prayerCache={};
+          function ramadan(key){try{return new Intl.DateTimeFormat('en-US-u-ca-islamic-umalqura',{month:'numeric',timeZone:'UTC'}).format(new Date(key+'T12:00:00Z'))==='9';}catch(_){return false;}}
+          function prayerRecord(key){
+            const cached=prayerCache[key];if(cached&&C.validTimes(cached.times))return cached;
+            return {times:calculatePrayer(key,ramadan(key)),source:'local'};
+          }
+          function prepareDay(ms){
+            day=C.key(ms);today=prayerRecord(day);tomorrow=prayerRecord(C.key(ms+C.DAY));lastPrayer='';lastNext='';
+          }
+          function renderPrayer(next){
+            const signature=JSON.stringify(today)+next.name;if(signature===lastPrayer)return;lastPrayer=signature;
+            const list=$('prayerList');list.textContent='';
+            Object.keys(names).forEach(name=>{const box=document.createElement('div');box.className='prayer'+(name===next.name?' active':'');
+              const label=document.createElement('span');label.textContent=names[name];const time=document.createElement('strong');time.textContent=C.f12(today.times[name]);box.append(label,time);list.appendChild(box);});
+            $('prayerNote').textContent=today.source==='online'?'Ø§Ù„Ù‚Ø±ÙŠØ§Øª Â· Ù…ÙˆØ§Ù‚ÙŠØª AlAdhan Ø¨Ø·Ø±ÙŠÙ‚Ø© Ø£Ù… Ø§Ù„Ù‚Ø±Ù‰ Â· ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„ØªÙ‚ÙˆÙŠÙ… Ø§Ù„Ù…Ø­Ù„ÙŠ':'Ø§Ù„Ù‚Ø±ÙŠØ§Øª Â· Ø­Ø³Ø§Ø¨ Ù…Ø­Ù„ÙŠ ØªÙ‚Ø±ÙŠØ¨ÙŠ Ø¨Ø·Ø±ÙŠÙ‚Ø© Ø£Ù… Ø§Ù„Ù‚Ø±Ù‰ØŒ ÙˆÙ„ÙŠØ³ ØªÙ‚ÙˆÙŠÙ…Ù‹Ø§ Ø±Ø³Ù…ÙŠÙ‹Ø§';
+          }
+          function tick(){
+            const ms=Date.now(),d=C.wall(ms),key=C.key(ms);
+            if(day!==key){prepareDay(ms);refreshData(true);}
+            const clockKey=Math.floor(ms/60000);
+            if(clockKey!==lastClock){
+              lastClock=clockKey;const h=d.getUTCHours();$('clock').textContent=C.f12(C.z(h)+':'+C.z(d.getUTCMinutes()));
+              $('greeting').textContent=h<5?'Ù„ÙŠÙ„Ø© Ù‡Ø§Ø¯Ø¦Ø©':h<12?'ØµØ¨Ø§Ø­ Ø§Ù„Ø®ÙŠØ±':h<17?'Ø·Ø§Ø¨ ÙŠÙˆÙ…Ùƒ':'Ù…Ø³Ø§Ø¡ Ø§Ù„Ø®ÙŠØ±';
+              try{$('date').textContent=new Intl.DateTimeFormat('ar-SA',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Riyadh'}).format(new Date(ms));}
+              catch(_){$('date').textContent=C.ar(key);}
+              $('clockNote').textContent=ms<__BUILD_TS__-C.DAY?'âš  ØªØ§Ø±ÙŠØ® Ø§Ù„Ø¬Ù‡Ø§Ø² Ø£Ù‚Ø¯Ù… Ù…Ù† Ø§Ù„Ø¥ØµØ¯Ø§Ø±Ø› Ø§Ø¶Ø¨Ø· Ø§Ù„ÙˆÙ‚Øª Ù…Ù† Ø§Ù„ØªØ®ØµÙŠØµ':'ØªÙˆÙ‚ÙŠØª Ø§Ù„Ø³Ø¹ÙˆØ¯ÙŠØ© Â· Ù…Ù† Ø³Ø§Ø¹Ø© Ø§Ù„Ø¬Ù‡Ø§Ø²Ø› ÙØ¹Ù‘Ù„ Ø§Ù„Ø¶Ø¨Ø· Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ Ù…Ù† Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª';
+              renderWeather();
+            }
+            const next=C.nextPrayer(ms,today.times,tomorrow.times),minutes=Math.max(1,Math.ceil((next.ts-ms)/60000));
+            const text=names[next.name]+' Ø¨Ø¹Ø¯ '+C.ar(Math.floor(minutes/60))+ ' Ø³ '+C.ar(minutes%60)+' Ø¯';
+            if(text!==lastNext){$('next').textContent=text;lastNext=text;}renderPrayer(next);
+            $('network').textContent=navigator.onLine?'Ø§Ù„Ø´Ø¨ÙƒØ© Ù…ØªØ§Ø­Ø© Â· Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø¯Ù…Ø§Øª ØºÙŠØ± Ù…Ø¶Ù…ÙˆÙ†':'Ø¯ÙˆÙ† Ø´Ø¨ÙƒØ© Â· Ø§Ù„ÙˆØ§Ø¬Ù‡Ø© ÙˆØ§Ù„Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…Ø­Ù„ÙŠ ÙŠØ¹Ù…Ù„Ø§Ù†';
+          }
+          EOF
+          cat >> app/src/main/assets/app.js <<'EOF'
+          async function fetchJSON(url){
+            const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+            try{const response=await fetch(url,{signal:controller.signal,credentials:'omit',cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);return await response.json();}
+            finally{clearTimeout(timer);}
+          }
+          async function fetchPrayer(key){
+            const parts=key.split('-'),date=parts[2]+'-'+parts[1]+'-'+parts[0];
+            const data=await fetchJSON('https://api.aladhan.com/v1/timings/'+date+'?latitude=31.33&longitude=37.34&method=4&timezonestring=Asia%2FRiyadh');
+            if(data.code!==200||!data.data||data.data.date.gregorian.date!==date)throw Error('Prayer date mismatch');
+            const times={};Object.keys(names).forEach(name=>times[name]=String(data.data.timings[name]).slice(0,5));
+            if(!C.validTimes(times))throw Error('Invalid prayer response');
+            prayerCache[key]={times,source:'online'};
+            const keep={};const current=C.key(Date.now());[current,C.key(Date.now()+C.DAY)].forEach(k=>{if(prayerCache[k])keep[k]=prayerCache[k];});
+            prayerCache=keep;store('shasha.v2.prayers',keep);
+          }
+          let wx=read('shasha.v2.weather',null);
+          function weatherLabel(code){
+            if(code===0)return 'ØµØ­Ùˆ';if([1,2].includes(code))return 'ØºØ§Ø¦Ù… Ø¬Ø²Ø¦ÙŠÙ‹Ø§';if(code===3)return 'ØºØ§Ø¦Ù…';
+            if([45,48].includes(code))return 'Ø¶Ø¨Ø§Ø¨';if([51,53,55,56,57].includes(code))return 'Ø±Ø°Ø§Ø°';
+            if([61,63,65,66,67,80,81,82].includes(code))return 'Ù…Ø·Ø±';if([71,73,75,77,85,86].includes(code))return 'Ø«Ù„Ø¬';
+            if([95,96,99].includes(code))return 'Ø¹ÙˆØ§ØµÙ Ø±Ø¹Ø¯ÙŠØ©';return 'Ø­Ø§Ù„Ø© ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙØ©';
+          }
+          function renderWeather(){
+            if(!wx||!Number.isFinite(wx.temperature)||!Number.isFinite(wx.observed))return;
+            $('temperature').textContent=C.ar(Math.round(wx.temperature))+'Â°';$('weather').textContent='Ø§Ù„Ù‚Ø±ÙŠØ§Øª Â· '+weatherLabel(wx.code);
+            const age=Math.floor((Date.now()-wx.observed)/60000);
+            $('weatherAge').textContent=age<0?'ÙˆÙ‚Øª Ø§Ù„Ø¬Ù‡Ø§Ø² ÙŠØ­ØªØ§Ø¬ Ù…Ø±Ø§Ø¬Ø¹Ø©':age>180?'Ø¨ÙŠØ§Ù†Ø§Øª Ù‚Ø¯ÙŠÙ…Ø© Â· Ø¢Ø®Ø± Ø±ØµØ¯ Ù…Ù†Ø° '+C.ar(Math.floor(age/60))+' Ø³Ø§Ø¹Ø§Øª':'Ø¢Ø®Ø± Ø±ØµØ¯ Ù…Ù†Ø° '+C.ar(age)+' Ø¯Ù‚ÙŠÙ‚Ø© Â· Open-Meteo';
+          }
+          async function fetchWeather(){
+            const data=await fetchJSON('https://api.open-meteo.com/v1/forecast?latitude=31.33&longitude=37.34&current=temperature_2m,weather_code&timezone=UTC');
+            const current=data.current,observed=current&&Date.parse(current.time+'Z');
+            if(!current||!Number.isFinite(current.temperature_2m)||!Number.isFinite(current.weather_code)||!Number.isFinite(observed))throw Error('Invalid weather');
+            wx={temperature:current.temperature_2m,code:current.weather_code,observed};store('shasha.v2.weather',wx);renderWeather();
+          }
+          async function refreshData(force=false){
+            if(busy||!navigator.onLine||(!force&&Date.now()-lastFetch<15*60000))return;
+            busy=true;lastFetch=Date.now();const key=C.key(Date.now()),next=C.key(Date.now()+C.DAY);
+            const tasks=[fetchPrayer(key),fetchPrayer(next),fetchWeather()];
+            await Promise.all(tasks.map(task=>task.catch(()=>null)));
+            busy=false;prepareDay(Date.now());lastClock='';tick();
+          }
+          let clockTimer=null,networkTimer=null;
+          window.pauseApp=()=>{clearInterval(clockTimer);clearInterval(networkTimer);clockTimer=networkTimer=null;cancelHold();};
+          window.resumeApp=()=>{
+            if(clockTimer!==null)return;lastClock='';tick();refreshApps();refreshData();
+            clockTimer=setInterval(tick,1000);networkTimer=setInterval(()=>refreshData(),60000);
+          };
+          document.addEventListener('visibilitychange',()=>document.hidden?window.pauseApp():window.resumeApp());
+          window.addEventListener('online',()=>{refreshData(true);tick();});window.addEventListener('offline',tick);
+          renderFavorites();renderWeather();prepareDay(Date.now());window.resumeApp();window.goHome();
+          EOF
+          sed -i "s/__BUILD_TS__/$(date +%s)000/g" app/src/main/assets/app.js
+          cat > tests/core.test.cjs <<'EOF'
+          const {test}=require('node:test'),assert=require('node:assert/strict');
+          const C=require('../app/src/main/assets/core.js');
+          const calculate=require('../app/src/main/assets/prayer.js');
+          test('Saudi day boundary is independent of host timezone',()=>{
+            assert.equal(C.key(Date.parse('2026-10-25T21:01:00Z')),'2026-10-26');
+          });
+          test('after Isha uses tomorrow Fajr, not today Fajr',()=>{
+            const today={Fajr:'05:10',Dhuhr:'12:00',Asr:'15:00',Maghrib:'18:00',Isha:'19:30'};
+            const tomorrow={...today,Fajr:'05:11'};
+            const next=C.nextPrayer(Date.parse('2026-10-25T21:00:00+03:00'),today,tomorrow);
+            assert.equal(next.ts,Date.parse('2026-10-26T05:11:00+03:00'));assert.equal(next.name,'Fajr');
+          });
+          test('reject malformed prayer data',()=>{
+            assert.equal(C.validTimes({Fajr:'99:99'}),false);
+            assert.throws(()=>C.nextPrayer(Date.now(),{},{}));
+          });
+          test('local calculations remain ordered through one year in Qurayyat',()=>{
+            for(let i=0;i<365;i++){
+              const key=new Date(Date.UTC(2026,0,1)+i*C.DAY).toISOString().slice(0,10);
+              const t=calculate(key,false);assert.ok(C.validTimes(t));
+              const values=Object.values(t).map(v=>C.epoch(key,v));
+              for(let j=1;j<values.length;j++)assert.ok(values[j]>values[j-1],key);
+            }
+          });
+          test('Ramadan local Isha interval is 120 minutes',()=>{
+            const key='2026-03-01',t=calculate(key,true);
+            assert.equal((C.epoch(key,t.Isha)-C.epoch(key,t.Maghrib))/60000,120);
+          });
+          EOF
+          cat > tests/ui.spec.cjs <<'EOF'
+          const {test,expect}=require('@playwright/test');
+          test.beforeEach(async({page})=>{
+            await page.route('https://api.aladhan.com/**',route=>route.abort());
+            await page.route('https://api.open-meteo.com/**',route=>route.abort());
+            await page.goto('http://127.0.0.1:8765');
+          });
+          test('offline-safe screen renders time and five prayer cards without JS errors',async({page})=>{
+            const errors=[];page.on('pageerror',error=>errors.push(error.message));
+            await page.reload();await expect(page.locator('.prayer')).toHaveCount(5);
+            await expect(page.locator('#clock')).not.toHaveText('â€”:â€”');
+            await expect(page.locator('#prayerNote')).toContainText('ØªÙ‚Ø±ÙŠØ¨ÙŠ');
+            await expect(page.locator('#home')).toBeVisible();expect(errors).toEqual([]);
+          });
+          test('remote opens modal and Back returns focus to visible opener',async({page})=>{
+            const opener=page.locator('[data-action="options"]');await opener.focus();
+            await page.keyboard.press('Enter');await expect(page.locator('#modal')).toBeVisible();
+            await page.keyboard.press('Escape');await expect(page.locator('#modal')).toBeHidden();
+            await expect(opener).toBeFocused();
+          });
+          test('theme choice persists across reload',async({page})=>{
+            await page.locator('[data-action="options"]').click();
+            await page.getByRole('button',{name:'Ù„ÙˆÙ† Ø£Ø²Ø±Ù‚'}).click();
+            await page.reload();await expect(page.locator('body')).toHaveClass(/blue/);
+          });
+          test('web preview explains why native apps are unavailable',async({page})=>{
+            await page.locator('[data-action="apps"]').click();
+            await expect(page.locator('#modalHint')).toContainText('Ù…Ø¹Ø§ÙŠÙ†Ø© ÙˆÙŠØ¨');
+          });
+          test('native app list, favorite hold, launch, and modal focus',async({page})=>{
+            await page.addInitScript(()=>{
+              window.launched=[];
+              window.Native={postMessage(raw){
+                const req=JSON.parse(raw);let data=[];
+                if(req.method==='apps')data=[{pkg:'demo.youtube',label:'YouTube'},{pkg:'demo.player',label:'Player'}];
+                if(req.method==='launch'){window.launched.push(req.arg);data=true;}
+                setTimeout(()=>window.Native.onmessage({data:JSON.stringify({id:req.id,data,error:null})}),0);
+              }};
+            });
+            await page.reload();const favorite=page.locator('#favorites button[data-pkg="demo.youtube"]');
+            await expect(favorite).toBeVisible();await favorite.focus();await page.keyboard.down('Enter');
+            await page.waitForTimeout(850);await page.keyboard.up('Enter');
+            await expect(favorite).toHaveCount(0);expect(await page.evaluate(()=>window.launched)).toEqual([]);
+            const opener=page.locator('[data-action="apps"]');await opener.click();
+            await page.locator('#modalContent button[data-pkg="demo.player"]').click();
+            await expect(page.locator('#modal')).toBeHidden();await expect(opener).toBeFocused();
+            await expect.poll(()=>page.evaluate(()=>window.launched)).toEqual(['pkg:demo.player']);
+          });
+          EOF
+          cat > playwright.config.cjs <<'EOF'
+          module.exports={
+            testDir:'./tests',testMatch:'ui.spec.cjs',timeout:30000,
+            use:{headless:true,viewport:{width:1920,height:1080},screenshot:'only-on-failure'},
+            reporter:[['list'],['html',{open:'never'}]],
+            webServer:{command:'python3 -m http.server 8765 --directory app/src/main/assets',url:'http://127.0.0.1:8765',reuseExistingServer:false}
+          };
+          EOF
+          cat > README-V2.md <<'EOF'
+          # Ø´Ø§Ø´Ø© 2 â€” Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ø§Ù„ØªØ´ØºÙŠÙ„
+          Ù‡Ø°Ø§ Ù…Ø´Ø±ÙˆØ¹ Android TV Ù…Ø­Ù„ÙŠ Ø£ÙˆÙ„Ù‹Ø§ØŒ ÙˆÙ„ÙŠØ³ Ù…ÙˆÙ‚Ø¹Ù‹Ø§ Ù…Ø³ØªØ¶Ø§ÙÙ‹Ø§. ÙˆØ§Ø¬Ù‡Ø© Ø§Ù„ÙˆÙŠØ¨ Ù‚Ø§Ø¨Ù„Ø© Ù„Ù„Ù…Ø¹Ø§ÙŠÙ†Ø©ØŒ Ù„ÙƒÙ† Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª ÙˆHDMI ØªØ­ØªØ§Ø¬ ØºÙ„Ø§Ù Ø£Ù†Ø¯Ø±ÙˆÙŠØ¯.
+          Ø§Ù„Ù…Ø¯ÙŠÙ†Ø© Ø«Ø§Ø¨ØªØ© Ø¹Ù„Ù‰ Ø§Ù„Ù‚Ø±ÙŠØ§Øª. Ø§Ù„Ø³Ø§Ø¹Ø© ØªØ¹ØªÙ…Ø¯ Ø¹Ù„Ù‰ Ø³Ø§Ø¹Ø© Ø§Ù„Ø¬Ù‡Ø§Ø². Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø§Ø³ØªÙ†ØªØ§Ø¬ Ù…Ø¯Ø© ÙØµÙ„ Ø§Ù„ÙƒÙ‡Ø±Ø¨Ø§Ø¡ Ø¯ÙˆÙ† Ù…ØµØ¯Ø± ÙˆÙ‚Øª Ù…ÙˆØ«ÙˆÙ‚Ø› Ø§Ø¶Ø¨Ø· Ø§Ù„ØªØ§Ø±ÙŠØ® ÙˆØ§Ù„ÙˆÙ‚Øª Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠÙŠÙ† Ù…Ù† Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªÙ„ÙØ²ÙŠÙˆÙ†.
+          Ø§Ù„ØµÙ„Ø§Ø© Ø§Ù„Ù…Ø­Ù„ÙŠØ© ØªÙ‚Ø¯ÙŠØ±ÙŠØ©. Ù†ØªØ§Ø¦Ø¬ AlAdhan Ù…Ù‚ÙŠÙ‘Ø¯Ø© Ø¨Ø§Ù„ØªØ§Ø±ÙŠØ® Ø§Ù„Ù…Ø·Ù„ÙˆØ¨. Ø§Ù„Ø·Ù‚Ø³ ÙŠØ­ØªØ§Ø¬ Ø§ØªØµØ§Ù„Ù‹Ø§ Ø¨Ø§Ù„Ø®Ø¯Ù…Ø© ÙˆÙŠØ¹Ø±Ø¶ Ø¹Ù…Ø± Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.
+          Ù„Ù… ØªÙØ¶Ù Ø®Ù„ÙÙŠØ§Øª Ø´Ø¨ÙƒÙŠØ© Ø£Ùˆ ØªÙ…ÙˆÙŠÙ‡ Ø£Ùˆ Ø­Ø±ÙƒØ© Ù…Ø³ØªÙ…Ø±Ø© Ù„ØªØ®ÙÙŠÙ Ø­Ù…Ù„ Ø£Ø¬Ù‡Ø²Ø© Ø§Ù„ØªÙ„ÙØ²ÙŠÙˆÙ†. Ø«Ù„Ø§Ø« Ù„ÙˆØ­Ø§Øª Ø£Ù„ÙˆØ§Ù†ØŒ Ù…ÙØ¶Ù„Ø© Ù…Ø­ÙÙˆØ¸Ø© ÙˆØ¶ØºØ· Ù…Ø·ÙˆÙ„ØŒ ÙˆØ¶Ø¹ Ù‡Ø§Ø¯Ø¦ØŒ ÙˆÙ…ØµØ§Ø¯Ø± HDMI Ù…Ù† Ø§Ù„Ù†Ø¸Ø§Ù….
+          Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø¢Ù† ØªÙØªØ­ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø¬Ù‡Ø§Ø² Ø¨Ø¯Ù„ ØªØ¹ÙˆÙŠØ¶ Ø³Ø§Ø¹Ø© Ø¯Ø§Ø®Ù„ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚. Ù„Ø§ ÙŠÙˆØ¬Ø¯ BootReceiverØ› Ù„ØªØ¹Ù…Ù„ Ø§Ù„ÙˆØ§Ø¬Ù‡Ø© ÙƒØ´Ø§Ø´Ø© Ø±Ø¦ÙŠØ³ÙŠØ© Ø§Ø®ØªØ±Ù‡Ø§ Ù…Ù† Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª HOME Ø¥Ù† Ø³Ù…Ø­ Ø¬Ù‡Ø§Ø²Ùƒ. Ù„Ù… ÙŠÙØ¶Ù ØµÙˆØª Ø£Ø°Ø§Ù† Ø£Ùˆ ØªØ´ØºÙŠÙ„ Ø¥Ø¬Ø¨Ø§Ø±ÙŠ Ø¹Ù†Ø¯ Ø§Ù„Ø¥Ù‚Ù„Ø§Ø¹.
+          Ø§Ù„Ø£ÙŠÙ‚ÙˆÙ†Ø§Øª Ø§Ù„Ø±Ø³Ù…ÙŠØ© Ù„Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª ØªÙØ³ØªØ®Ø¯Ù… Ù…Ø¨Ø§Ø´Ø±Ø©ØŒ ÙˆÙ„Ø§ ØªÙØ³ØªØ®Ø¯Ù… logos Ø§Ù„Ù…Ø®ØµØµØ© Ù…Ù† Ø§Ù„Ø¥ØµØ¯Ø§Ø± Ø§Ù„Ø³Ø§Ø¨Ù‚. Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…ÙØ¶Ù„Ø© Ø§Ù„Ù‚Ø¯ÙŠÙ…Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø© ÙÙŠ Ø§Ù„Ù†Ø³Ø®Ø© Ø§Ù„Ø£ØµÙ„ÙŠØ©ØŒ ÙˆØ¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ù†Ø³Ø®Ø© Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© Ù…Ø­ÙÙˆØ¸Ø© Ø¨Ù…ÙØ§ØªÙŠØ­ Ù…Ù†ÙØµÙ„Ø©.
+          APK Ø§Ù„Ù†Ø§ØªØ¬ Debug Ù„Ù„Ø§Ø®ØªØ¨Ø§Ø±ØŒ ÙˆÙ„ÙŠØ³ Ø¥ØµØ¯Ø§Ø± Ù…ØªØ¬Ø±. ÙŠØ³ØªØ®Ø¯Ù… Ù†ÙØ³ applicationId ÙˆÙŠØ­Ø§ÙˆÙ„ Ø§Ø³ØªØ¹Ø§Ø¯Ø© debug.keystore Ø§Ù„Ø³Ø§Ø¨Ù‚ Ù…Ù† ÙƒØ§Ø´ GitHub. Ø§Ù„ÙƒØ§Ø´ Ù„ÙŠØ³ Ù…Ø®Ø²Ù† ØªÙˆÙ‚ÙŠØ¹ Ø¯Ø§Ø¦Ù…Ù‹Ø§Ø› Ø¹Ù†Ø¯ Ø§Ø®ØªÙ„Ø§Ù Ø§Ù„ØªÙˆÙ‚ÙŠØ¹ Ù„Ù† ÙŠØ«Ø¨Øª ÙƒØªØ­Ø¯ÙŠØ«. Ø§Ø­ØªÙØ¸ Ø¨Ø§Ù„Ù†Ø³Ø®Ø© Ø§Ù„Ù‚Ø¯ÙŠÙ…Ø© ÙˆØ¨ÙŠØ§Ù†Ø§ØªÙ‡Ø§ØŒ ÙˆØ¬Ù‡Ø² ØªÙˆÙ‚ÙŠØ¹ Release Ø¢Ù…Ù†Ù‹Ø§ Ù‚Ø¨Ù„ Ø§Ù„ØªÙˆØ²ÙŠØ¹ Ø§Ù„Ù…Ø³ØªÙ…Ø±. Ù„Ø§ ØªØ­Ø°Ù Ø§Ù„Ù†Ø³Ø®Ø© Ø§Ù„Ù‚Ø¯ÙŠÙ…Ø© ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ø¥Ø°Ø§ ÙØ´Ù„ Ø§Ù„ØªØ­Ø¯ÙŠØ«.
+          ØªØ«Ø¨ÙŠØª HOME Ø£Ùˆ ÙØªØ­ HDMI ÙŠØ®ØªÙ„Ù Ø¨Ø§Ø®ØªÙ„Ø§Ù Ø§Ù„Ù…ØµÙ†Ø¹. Ø§Ø®ØªØ¨Ø§Ø± Playwright ÙŠØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„ÙˆØ§Ø¬Ù‡Ø© Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ù…ØªØµÙØ­ Ø­Ø¯ÙŠØ« ÙˆÙ…Ø­Ø§ÙƒØ§Ø© Ø¬Ø³Ø± Ø£Ù†Ø¯Ø±ÙˆÙŠØ¯ØŒ ÙˆÙ„Ø§ ÙŠØºÙ†ÙŠ Ø¹Ù† Ø§Ø®ØªØ¨Ø§Ø± WebView ÙˆØ§Ù„Ø±ÙŠÙ…ÙˆØª ÙˆØ§Ù„Ù…Ù†Ø§ÙØ° Ø¹Ù„Ù‰ Ø§Ù„ØªÙ„ÙØ²ÙŠÙˆÙ† Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠ.
+          ÙŠØªØ·Ù„Ø¨ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚ WebView ÙŠØ¯Ø¹Ù… WEB_MESSAGE_LISTENERØ› ÙŠØ¹Ø±Ø¶ Ø±Ø³Ø§Ù„Ø© ØªØ­Ø¯ÙŠØ« Ø¥Ù† Ù„Ù… ØªØªÙˆÙØ± Ø§Ù„Ù…ÙŠØ²Ø©. Ù„Ø§ ÙŠØ³ØªØ®Ø¯Ù… Ø¬Ø³Ø± addJavascriptInterface Ø§Ù„Ù…ÙƒØ´ÙˆÙ Ù„ÙƒÙ„ Ø§Ù„Ø¥Ø·Ø§Ø±Ø§Øª.
+          Ù„Ø§ Ù†Ø´Ø± ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ø¥Ù„Ù‰ Releases. Ø§Ù„Ù…Ù„Ù Ù…ØªØ§Ø­ Ù…Ù† Actions Ø¨Ø¹Ø¯ Ø§Ø¬ØªÙŠØ§Ø² Ø§Ù„Ø§Ø®ØªØ¨Ø§Ø±Ø§Øª ÙˆLint ÙˆØ§Ù„Ø¨Ù†Ø§Ø¡. ÙŠÙ„Ø²Ù… Ø¥Ù†ØªØ±Ù†Øª Ù„Ù„Ø¨Ù†Ø§Ø¡ ÙˆØªÙ†Ø²ÙŠÙ„ Ø§Ù„Ø§Ø¹ØªÙ…Ø§Ø¯ÙŠØ§Øª.
+          Ø§Ù„Ø¨Ù†Ø§Ø¡ ÙŠÙˆÙ„Ø¯ Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø¯Ø§Ø®Ù„ shasha-v2Ø› Ù„Ø§ ÙŠØ¹Ø¯Ù‘Ù„ Ù…Ù„ÙØ§Øª Ø§Ù„ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ø£ØµÙ„ÙŠØ© Ø®Ø§Ø±Ø¬Ù‡. Ø§Ø³ØªØ¨Ø¯Ù„ Ù…Ù„Ù workflow Ø§Ù„Ù‚Ø¯ÙŠÙ… Ø¨Ù‡Ø°Ù‡ Ø§Ù„Ù†Ø³Ø®Ø©ØŒ ÙˆÙ„Ø§ ØªØ´ØºÙ„ Ø§Ù„Ù…Ù„ÙÙŠÙ† Ù…Ø¹Ù‹Ø§.
+          ÙØ­Øµ ÙŠØ¯ÙˆÙŠ Ù‚Ø¨Ù„ Ø§Ù„Ø§Ø¹ØªÙ…Ø§Ø¯: ÙØµÙ„ Ø§Ù„Ø´Ø¨ÙƒØ©ØŒ Ø§Ù„Ø±Ø¬ÙˆØ¹ Ù…Ù† ØªØ·Ø¨ÙŠÙ‚ØŒ Ø§Ø®ØªØ¨Ø§Ø± Ø§Ù„Ø¥Ù‚Ù„Ø§Ø¹ ÙƒÙˆØ§Ø¬Ù‡Ø© HOMEØŒ Ø¥Ø¹Ø§Ø¯Ø© ØªØ´ØºÙŠÙ„ Ø§Ù„Ø¬Ù‡Ø§Ø²ØŒ ØªØºÙŠÙŠØ± Ø³Ø§Ø¹ØªÙ‡ØŒ ØªØ¬Ø±Ø¨Ø© HDMIØŒ ÙˆØªØ¬Ø±Ø¨Ø© Ø±ÙŠÙ…ÙˆØª Ø§Ù„Ø¬Ù‡Ø§Ø². Ø¥Ù† Ø§Ø®ØªÙ„Ù Ø§Ø³Ù… Ø§Ù„ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…ÙØ¶Ù„ØŒ Ø£Ø¶ÙÙ‡ Ù…Ù† Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª.
+          EOF
+      - name: JavaScript syntax and compatibility tests
+        working-directory: shasha-v2
+        run: |
+          set -euo pipefail
+          node --check app/src/main/assets/core.js
+          node --check app/src/main/assets/prayer.js
+          node --check app/src/main/assets/app.js
+          CORE_PATH=../app/src/main/assets/core.js node --test tests/compatibility.test.cjs
+          node --test tests/core.test.cjs
+      - name: Browser and remote-control regression tests
+        working-directory: shasha-v2
+        run: |
+          set -euo pipefail
+          npm init -y
+          npm install --save-dev --save-exact @playwright/test@1.51.1
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - name: Restore previous debug signing key when available
+        uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: debug-keystore-v1
-      - run: gradle assembleDebug --no-daemon
-      - run: cp app/build/outputs/apk/debug/app-debug.apk shasha.apk
-      - uses: softprops/action-gh-release@v2
+      - name: Android Lint, tests, and APK
+        working-directory: shasha-v2
+        run: gradle lintDebug testDebugUnitTest assembleDebug --no-daemon --stacktrace
+      - name: Package APK and checksums
+        run: |
+          set -euo pipefail
+          mkdir -p shasha-download
+          cp shasha-v2/app/build/outputs/apk/debug/app-debug.apk shasha-download/shasha-v2-debug.apk
+          cp shasha-v2/README-V2.md shasha-download/
+          cd shasha-download
+          sha256sum shasha-v2-debug.apk > SHA256SUMS.txt
+      - name: Downloadable APK
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v${{ github.run_number }}
-          files: shasha.apk
-          make_latest: true
+          name: shasha-v2-debug
+          path: shasha-download/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Reports and generated source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shasha-v2-source-and-reports
+          path: |
+            shasha-v2/app/src/
+            shasha-v2/app/build.gradle
+            shasha-v2/build.gradle
+            shasha-v2/settings.gradle
+            shasha-v2/gradle.properties
+            shasha-v2/tests/
+            shasha-v2/playwright.config.cjs
+            shasha-v2/package.json
+            shasha-v2/package-lock.json
+            shasha-v2/README-V2.md
+            shasha-v2/playwright-report/
+            shasha-v2/test-results/
+            shasha-v2/app/build/reports/
+          if-no-files-found: warn
+          retention-days: 14
